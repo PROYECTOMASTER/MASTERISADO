@@ -16,6 +16,8 @@ async function inicializarDB() {
       creado_en TIMESTAMP DEFAULT NOW()
     );
 
+    ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS rol VARCHAR(20) DEFAULT 'cliente';
+
     CREATE TABLE IF NOT EXISTS categorias (
       id     SERIAL PRIMARY KEY,
       nombre VARCHAR(100) UNIQUE NOT NULL
