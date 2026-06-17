@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Control de Stock — Admin</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Segoe UI', system-ui, sans-serif; background: #f0f2f5; min-height: 100vh; }
+
+    header { background: #1a1a2e; color: white; padding: 14px 28px; display: flex; align-items: center; justify-content: space-between; }
+    header h1 { font-size: 18px; letter-spacing: 1px; }
+    .badge-admin { background: #4A90D9; color: white; padding: 3px 10px; border-radius: 20px; font-size: 11px; font-weight: 700; margin-left: 8px; }
+    .header-right { display: flex; gap: 16px; align-items: center; }
+    .header-right a { color: #aab; font-size: 13px; text-decoration: none; }
+    .btn-logout { background: none; border: none; color: #aab; cursor: pointer; font-size: 13px; }
+
+    nav { background: #252545; display: flex; gap: 4px; padding: 0 28px; }
+    nav a { color: #aab; text-decoration: none; padding: 12px 20px; font-size: 13px; font-weight: 600; display: block; border-bottom: 3px solid transparent; transition: all 0.2s; }
+    nav a:hover { color: white; }
+    nav a.active { color: white; border-bottom-color: #27AE60; }
+
+    main { max-width: 1100px; margin: 32px auto; padding: 0 20px; }
+
+    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 24px; }
+    @media (max-width: 700px) { .grid-2 { grid-template-columns: 1fr; } }
+
+    .card { background: white; border-radius: 12px; padding: 24px; box-shadow: 0 2px 12px rgba(0,0,0,0.07); }
+    .card-title { font-size: 15px; font-weight: 700; color: #1a1a2e; margin-bottom: 18px; display: flex; align-items: center; gap: 8px; }
+
+    label { display: block; font-size: 12px; font-weight: 600; color: #555; margin-bottom: 6px; }
+    select, input { width: 100%; padding: 9px 12px; border: 1.5px solid #d0d5dd; border-radius: 8px; font-size: 13px; outline: none; transition: border-color 0.2s; margin-bottom: 14px; }
+    input:focus, select:focus { border-color: #4A90D9; }
+
+    .tipo-btns { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 14px; }
+    .tipo-btn {
+      padding: 12px; border: 2px solid #d0d5dd; border-radius: 8px;
+      background: white; cursor: pointer; font-size: 13px; font-weight: 600;
+      text-align: center; transition: all 0.2s; color: #555;
+    }
+    .tipo-btn.entrada.selected { border-color: #27AE60; background: #f0fff4; color: #27AE60; }
+    .tipo-btn.salida.selected  { border-color: #e74c3c; background: #fff0f0; color: #e74c3c; }
+
+    .btn { width: 100%; padding: 12px; border: none; border-radius: 8px; font-size: 14px; font-weight: 700; cursor: pointer; transition: opacity 0.2s; }
+    .btn:hover { opacity: 0.85; }
+    .btn-entrada { background: #27AE60; color: white; }
+    .btn-salida  { background: #e74c3c; color: white; }
+    .btn-neutro  { background: #4A90D9; color: white; }
+
+    .msg { padding: 10px 14px; border-radius: 8px; font-size: 13px; margin-top: 14px; display: none; }
+    .msg-ok  { background: #f0fff4; border: 1px solid #b7ebc8; color: #1e7e34; }
+    .msg-err { background: #fff0f0; border: 1px solid #f5c6c6; color: #c0392b; }
+
+    /* Tarjetas de stock */
+    .stock-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 14px; margin-bottom: 24px; }
+    .stock-card {
+      background: white; border-radius: 10px; padding: 16px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.07);
+      border-left: 4px solid #d0d5dd;
+    }
+    .stock-card.ok    { border-left-color: #27AE60; }
+    .stock-card.bajo  { border-left-color: #f39c12; }
+    .stock-card.agotado { border-left-color: #e74c3c; }
+    .stock-card-nombre { font-size: 13px; font-weight: 600; color: #1a1a2e; margin-bottom: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .stock-card-qty { font-size: 26px; font-weight: 700; }
+    .stock-card.ok .stock-card-qty     { color: #27AE60; }
+    .stock-card.bajo .stock-card-qty   { color: #f39c12; }
+    .stock-card.agotado .stock-card-qty { color: #e74c3c; }
+    .stock-card-label { font-size: 11px; color: #888; }
+
+    /* Tabla movimientos */
+    .tabla-wrap { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th { background: #f5f6fa; color: #555; font-weight: 600; padding: 10px 14px; text-align: left; border-bottom: 2px solid #e8eaf0; }
+    td { padding: 10px 14px; border-bottom: 1px solid #f0f0f5; color: #333; }
+    tr:hover td { background: #fafbff; }
+
+    .badge-entrada { background: #e8f8ee; color: #27AE60; padding: 3px 10px; border-radius: 20px; font-size: 11px; font-weight: 700; }
+    .badge-salida  { background: #fde8e8; color: #e74c3c; padding: 3px 10px; border-radius: 20px; font-size: 11px; font-weight: 700; }
+    .badge-venta   { background: #fff3e0; color: #f39c12; padding: 3px 10px; border-radius: 20px; font-size: 11px; font-weight: 700; }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>MASTERISADO <span class="badge-admin">ADMIN</span></h1>
+  <div class="header-right">
+    <a href="/tienda">Ver tienda</a>
+    <form action="/logout" method="POST" style="margin:0">
+      <button type="submit" class="btn-logout">Salir</button>
+    </form>
+  </div>
+</header>
+
+<nav>
+  <a href="/admin/productos">⚙️ Configurar productos</a>
+  <a href="/admin/stock" class="active">📦 Control de stock</a>
+</nav>
+
+<main>
+
+  <!-- Resumen de stock -->
+  <div class="card" style="margin-bottom:24px">
+    <div class="card-title">📊 Resumen de inventario</div>
+    <div class="stock-cards" id="stock-cards">
+      <p style="color:#aaa">Cargando...</p>
+    </div>
+  </div>
+
+  <div class="grid-2">
+
+    <!-- Formulario de movimiento -->
+    <div class="card">
+      <div class="card-title">➕➖ Registrar movimiento</div>
+
+      <label>Tipo de movimiento</label>
+      <div class="tipo-btns">
+        <button class="tipo-btn entrada selected" id="btn-entrada" onclick="setTipo('entrada')">⬆ Entrada de stock</button>
+        <button class="tipo-btn salida" id="btn-salida" onclick="setTipo('salida')">⬇ Salida de stock</button>
+      </div>
+
+      <label>Producto</label>
+      <select id="m-producto">
+        <option value="">Selecciona un producto...</option>
+      </select>
+
+      <label>Cantidad</label>
+      <input type="number" id="m-cantidad" min="1" value="1" placeholder="1" />
+
+      <label>Motivo (opcional)</label>
+      <input type="text" id="m-motivo" placeholder="Ej: Compra a proveedor, Ajuste de inventario..." />
+
+      <button class="btn btn-entrada" id="btn-registrar" onclick="registrarMovimiento()">Registrar entrada</button>
+
+      <div class="msg msg-ok" id="msg-ok"></div>
+      <div class="msg msg-err" id="msg-err"></div>
+    </div>
+
+    <!-- Stock bajo -->
+    <div class="card">
+      <div class="card-title">⚠️ Productos con stock bajo</div>
+      <div id="lista-bajo">
+        <p style="color:#aaa;font-size:13px">Cargando...</p>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Historial de movimientos -->
+  <div class="card">
+    <div class="card-title">🕒 Historial de movimientos</div>
+    <div class="tabla-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Fecha</th>
+            <th>Producto</th>
+            <th>Tipo</th>
+            <th>Cantidad</th>
+            <th>Motivo</th>
+            <th>Registrado por</th>
+          </tr>
+        </thead>
+        <tbody id="tabla-movimientos">
+          <tr><td colspan="6" style="text-align:center;color:#aaa;padding:24px">Cargando...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+</main>
+
+<script>
+  let tipo = 'entrada';
+  let productos = [];
+
+  function setTipo(t) {
+    tipo = t;
+    document.getElementById('btn-entrada').classList.toggle('selected', t === 'entrada');
+    document.getElementById('btn-salida').classList.toggle('selected', t === 'salida');
+    const btn = document.getElementById('btn-registrar');
+    btn.textContent = t === 'entrada' ? 'Registrar entrada' : 'Registrar salida';
+    btn.className = `btn btn-${t}`;
+  }
+
+  async function cargarDatos() {
+    const r = await fetch('/api/admin/productos');
+    productos = await r.json();
+
+    // Llenar selector
+    const sel = document.getElementById('m-producto');
+    sel.innerHTML = '<option value="">Selecciona un producto...</option>' +
+      productos.filter(p => p.activo).map(p => `<option value="${p.id}">${p.nombre} (stock: ${p.stock})</option>`).join('');
+
+    // Tarjetas resumen
+    const cards = document.getElementById('stock-cards');
+    if (!productos.length) { cards.innerHTML = '<p style="color:#aaa">Sin productos</p>'; return; }
+    cards.innerHTML = productos.map(p => {
+      const cls = p.stock === 0 ? 'agotado' : p.stock <= 5 ? 'bajo' : 'ok';
+      const lbl = p.stock === 0 ? 'AGOTADO' : p.stock <= 5 ? 'Stock bajo' : 'Disponible';
+      return `<div class="stock-card ${cls}">
+        <div class="stock-card-nombre" title="${p.nombre}">${p.nombre}</div>
+        <div class="stock-card-qty">${p.stock}</div>
+        <div class="stock-card-label">${lbl}</div>
+      </div>`;
+    }).join('');
+
+    // Lista stock bajo
+    const bajos = productos.filter(p => p.stock <= 5);
+    const lista = document.getElementById('lista-bajo');
+    if (!bajos.length) {
+      lista.innerHTML = '<p style="color:#27AE60;font-size:13px">✅ Todos los productos tienen stock suficiente</p>';
+    } else {
+      lista.innerHTML = `<table style="width:100%;font-size:13px">
+        <thead><tr>
+          <th style="padding:8px;border-bottom:1px solid #eee;color:#555">Producto</th>
+          <th style="padding:8px;border-bottom:1px solid #eee;color:#555">Stock</th>
+        </tr></thead>
+        <tbody>${bajos.map(p => `<tr>
+          <td style="padding:8px;border-bottom:1px solid #f5f5f5">${p.nombre}</td>
+          <td style="padding:8px;border-bottom:1px solid #f5f5f5;font-weight:700;color:${p.stock===0?'#e74c3c':'#f39c12'}">${p.stock === 0 ? 'Agotado' : p.stock + ' uds'}</td>
+        </tr>`).join('')}</tbody>
+      </table>`;
+    }
+  }
+
+  async function cargarMovimientos() {
+    const r = await fetch('/api/admin/stock/movimientos');
+    const data = await r.json();
+    const tbody = document.getElementById('tabla-movimientos');
+    if (!data.length) {
+      tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#aaa;padding:24px">Sin movimientos registrados</td></tr>';
+      return;
+    }
+    tbody.innerHTML = data.map(m => {
+      const fecha = new Date(m.creado_en).toLocaleString('es-CO', { dateStyle: 'short', timeStyle: 'short' });
+      const badge = m.tipo === 'entrada'
+        ? `<span class="badge-entrada">⬆ Entrada</span>`
+        : m.tipo === 'venta'
+        ? `<span class="badge-venta">🛒 Venta</span>`
+        : `<span class="badge-salida">⬇ Salida</span>`;
+      return `<tr>
+        <td>${fecha}</td>
+        <td>${m.producto}</td>
+        <td>${badge}</td>
+        <td><strong>${m.tipo === 'entrada' ? '+' : '-'}${m.cantidad}</strong></td>
+        <td style="color:#888">${m.motivo || '—'}</td>
+        <td>${m.usuario}</td>
+      </tr>`;
+    }).join('');
+  }
+
+  async function registrarMovimiento() {
+    const producto_id = document.getElementById('m-producto').value;
+    const cantidad = parseInt(document.getElementById('m-cantidad').value);
+    const motivo = document.getElementById('m-motivo').value;
+
+    document.getElementById('msg-ok').style.display = 'none';
+    document.getElementById('msg-err').style.display = 'none';
+
+    if (!producto_id) return mostrarError('Selecciona un producto');
+    if (!cantidad || cantidad < 1) return mostrarError('La cantidad debe ser mayor a 0');
+
+    const r = await fetch('/api/admin/stock', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ producto_id, tipo, cantidad, motivo })
+    });
+    const data = await r.json();
+
+    if (data.exito) {
+      const el = document.getElementById('msg-ok');
+      el.textContent = `✅ ${tipo === 'entrada' ? 'Entrada' : 'Salida'} registrada. Stock actual: ${data.nuevo_stock} unidades`;
+      el.style.display = 'block';
+      document.getElementById('m-cantidad').value = 1;
+      document.getElementById('m-motivo').value = '';
+      await cargarDatos();
+      await cargarMovimientos();
+    } else {
+      mostrarError(data.mensaje);
+    }
+  }
+
+  function mostrarError(msg) {
+    const el = document.getElementById('msg-err');
+    el.textContent = msg;
+    el.style.display = 'block';
+  }
+
+  cargarDatos();
+  cargarMovimientos();
+</script>
+</body>
+</html>

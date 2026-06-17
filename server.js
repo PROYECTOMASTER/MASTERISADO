@@ -184,6 +184,10 @@ app.get('/admin/productos', requireAuth, requireAdmin, (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'admin-productos.html'));
 });
 
+app.get('/admin/stock', requireAuth, requireAdmin, (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'admin-stock.html'));
+});
+
 // ── Admin — API productos ────────────────────────────────────────────────────
 
 app.get('/api/admin/productos', requireAuth, requireAdmin, async (req, res) => {
@@ -215,11 +219,11 @@ app.post('/api/admin/productos', requireAuth, requireAdmin, async (req, res) => 
 });
 
 app.put('/api/admin/productos/:id', requireAuth, requireAdmin, async (req, res) => {
-  const { nombre, descripcion, precio, stock, imagen_url, activo } = req.body;
+  const { nombre, descripcion, precio, imagen_url, activo } = req.body;
   try {
     await pool.query(
-      'UPDATE productos SET nombre=$1, descripcion=$2, precio=$3, stock=$4, imagen_url=$5, activo=$6 WHERE id=$7',
-      [nombre, descripcion || '', precio, stock, imagen_url || '', activo !== false, req.params.id]
+      'UPDATE productos SET nombre=$1, descripcion=$2, precio=$3, imagen_url=$4, activo=$5 WHERE id=$6',
+      [nombre, descripcion || '', precio, imagen_url || '', activo !== false, req.params.id]
     );
     res.json({ exito: true });
   } catch (err) {
@@ -234,6 +238,50 @@ app.delete('/api/admin/productos/:id', requireAuth, requireAdmin, async (req, re
     res.json({ exito: true });
   } catch (err) {
     res.json({ exito: false, mensaje: 'Error al eliminar' });
+  }
+});
+
+// ── Admin — API stock ────────────────────────────────────────────────────────
+
+app.post('/api/admin/stock', requireAuth, requireAdmin, async (req, res) => {
+  const { producto_id, tipo, cantidad, motivo } = req.body;
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const delta = tipo === 'entrada' ? cantidad : -cantidad;
+    const r = await client.query('SELECT stock FROM productos WHERE id = $1 FOR UPDATE', [producto_id]);
+    if (!r.rows.length) throw new Error('Producto no encontrado');
+    const nuevoStock = r.rows[0].stock + delta;
+    if (nuevoStock < 0) throw new Error('Stock insuficiente para registrar salida');
+    await client.query('UPDATE productos SET stock = $1 WHERE id = $2', [nuevoStock, producto_id]);
+    await client.query(
+      'INSERT INTO movimientos_stock (producto_id, tipo, cantidad, motivo, usuario_id) VALUES ($1, $2, $3, $4, $5)',
+      [producto_id, tipo, cantidad, motivo || '', req.session.usuario.id]
+    );
+    await client.query('COMMIT');
+    res.json({ exito: true, nuevo_stock: nuevoStock });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    res.json({ exito: false, mensaje: err.message });
+  } finally {
+    client.release();
+  }
+});
+
+app.get('/api/admin/stock/movimientos', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const r = await pool.query(`
+      SELECT m.id, m.tipo, m.cantidad, m.motivo, m.creado_en,
+             p.nombre AS producto, u.nombre AS usuario
+      FROM movimientos_stock m
+      JOIN productos p ON m.producto_id = p.id
+      JOIN usuarios u ON m.usuario_id = u.id
+      ORDER BY m.creado_en DESC
+      LIMIT 100
+    `);
+    res.json(r.rows);
+  } catch (err) {
+    res.status(500).json({ mensaje: 'Error' });
   }
 });
 

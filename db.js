@@ -48,6 +48,16 @@ async function inicializarDB() {
       cantidad    INTEGER NOT NULL,
       precio_unit NUMERIC(12,2) NOT NULL
     );
+
+    CREATE TABLE IF NOT EXISTS movimientos_stock (
+      id          SERIAL PRIMARY KEY,
+      producto_id INTEGER REFERENCES productos(id),
+      tipo        VARCHAR(20) NOT NULL,
+      cantidad    INTEGER NOT NULL,
+      motivo      VARCHAR(200),
+      usuario_id  INTEGER REFERENCES usuarios(id),
+      creado_en   TIMESTAMP DEFAULT NOW()
+    );
   `);
 }
 
