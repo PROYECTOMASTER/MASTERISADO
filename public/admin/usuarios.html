@@ -44,7 +44,7 @@
       </div>
       <div class="tabla-wrap">
         <table>
-          <thead><tr><th>Nombre</th><th>Usuario</th><th>Rol</th><th>Registro</th><th>Acciones</th></tr></thead>
+          <thead><tr><th>Nombre</th><th>Usuario</th><th>Rol</th><th>Registro</th><th>Acciones</th><th>Clave</th></tr></thead>
           <tbody id="tabla-usuarios"><tr><td colspan="5" style="text-align:center;color:#aaa;padding:30px">Cargando...</td></tr></tbody>
         </table>
       </div>
@@ -77,6 +77,29 @@
     </div>
   </div>
 </main>
+
+<!-- Modal resetear clave -->
+<div class="modal-overlay" id="modal-reset-clave">
+  <div class="modal" style="max-width:380px">
+    <div class="modal-title">🔒 Resetear contraseña</div>
+    <input type="hidden" id="rc-id"/>
+    <p id="rc-nombre-label" style="font-size:13px;color:#555;margin-bottom:16px"></p>
+    <div class="campo" style="margin-bottom:6px">
+      <label>Nueva contraseña *</label>
+      <input type="password" id="rc-clave" maxlength="8" placeholder="Máx. 8 caracteres"/>
+      <div style="font-size:11px;color:#aaa;margin-top:4px">Letras, números y símbolos — máximo 8 caracteres</div>
+    </div>
+    <div class="campo" style="margin-bottom:16px">
+      <label>Confirmar contraseña *</label>
+      <input type="password" id="rc-confirmar" maxlength="8" placeholder="Repite la contraseña"/>
+    </div>
+    <div id="rc-msg" style="font-size:13px;margin-bottom:10px;display:none"></div>
+    <div class="modal-footer">
+      <button class="btn" style="background:#eee;color:#555" onclick="cerrarResetClave()">Cancelar</button>
+      <button class="btn btn-success" onclick="resetClave()">Guardar nueva clave</button>
+    </div>
+  </div>
+</div>
 
 <!-- Modal cambiar rol de usuario -->
 <div class="modal-overlay" id="modal-rol-usuario">
@@ -138,6 +161,8 @@ function renderTablaUsuarios(lista) {
   tbody.innerHTML = lista.map(u => {
     const esSuperusuario = u.rol === 'superusuario';
     const puedeEditar = sesionActual?.permisos?.usuarios && !esSuperusuario;
+    const puedeResetClave = sesionActual?.permisos?.usuarios &&
+      (esSuperusuario ? sesionActual?.permisos?.asignar_admin : true);
     const colorRol = u.rol==='superusuario'?'azul':u.rol==='administrador'?'verde':'gris';
     return `<tr>
       <td><strong>${u.nombre}</strong></td>
@@ -147,7 +172,12 @@ function renderTablaUsuarios(lista) {
       <td>
         ${puedeEditar
           ? `<button class="btn btn-warning btn-sm" onclick='abrirModalRolUser(${JSON.stringify(u)})'>Cambiar rol</button>`
-          : `<span style="font-size:11px;color:#aaa">${esSuperusuario?'No modificable':'—'}</span>`}
+          : `<span style="font-size:11px;color:#aaa">${esSuperusuario?'—':'—'}</span>`}
+      </td>
+      <td>
+        ${puedeResetClave
+          ? `<button class="btn btn-primary btn-sm" onclick='abrirResetClave(${u.id},"${u.nombre}")'>Resetear</button>`
+          : '—'}
       </td>
     </tr>`;
   }).join('');
@@ -155,12 +185,12 @@ function renderTablaUsuarios(lista) {
 
 function filtrarUsuarios() {
   const q = document.getElementById('bus-usuarios').value.toLowerCase();
-  renderTablaUsuarios(usuarios.filter(u => u.nombre.toLowerCase().includes(q) || u.email.toLowerCase().includes(q)));
+  renderTablaUsuarios(usuarios.filter(u => u.nombre.toLowerCase().includes(q) || (u.usuario||'').toLowerCase().includes(q)));
 }
 
 function abrirModalRolUser(u) {
   document.getElementById('u-id').value = u.id;
-  document.getElementById('u-nombre-label').textContent = `Usuario: ${u.nombre} (${u.email})`;
+  document.getElementById('u-nombre-label').textContent = `Usuario: ${u.nombre} (@${u.usuario||'—'})`;
   const sel = document.getElementById('u-rol-sel');
   const puedeAsignarAdmin = sesionActual?.permisos?.asignar_admin;
   sel.innerHTML = roles
@@ -174,6 +204,35 @@ function abrirModalRolUser(u) {
   document.getElementById('modal-rol-usuario').classList.add('open');
 }
 function cerrarModalRolUser() { document.getElementById('modal-rol-usuario').classList.remove('open'); }
+
+function abrirResetClave(id, nombre) {
+  document.getElementById('rc-id').value = id;
+  document.getElementById('rc-nombre-label').textContent = `Usuario: ${nombre}`;
+  document.getElementById('rc-clave').value = '';
+  document.getElementById('rc-confirmar').value = '';
+  document.getElementById('rc-msg').style.display = 'none';
+  document.getElementById('modal-reset-clave').classList.add('open');
+}
+function cerrarResetClave() { document.getElementById('modal-reset-clave').classList.remove('open'); }
+
+async function resetClave() {
+  const id       = document.getElementById('rc-id').value;
+  const clave    = document.getElementById('rc-clave').value;
+  const confirmar = document.getElementById('rc-confirmar').value;
+  const msg = document.getElementById('rc-msg');
+  msg.style.display = 'none';
+  if (!clave) { msg.textContent = 'Ingresa la nueva contraseña'; msg.style.color='#e74c3c'; msg.style.display='block'; return; }
+  if (clave.length > 8) { msg.textContent = 'Máximo 8 caracteres'; msg.style.color='#e74c3c'; msg.style.display='block'; return; }
+  if (clave !== confirmar) { msg.textContent = 'Las contraseñas no coinciden'; msg.style.color='#e74c3c'; msg.style.display='block'; return; }
+  const r = await fetch(`/api/usuarios/${id}/reset-clave`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ clave_nueva: clave }),
+  });
+  const data = await r.json();
+  if (data.exito) { cerrarResetClave(); toast('Contraseña actualizada correctamente'); }
+  else { msg.textContent = data.mensaje || 'Error'; msg.style.color='#e74c3c'; msg.style.display='block'; }
+}
 
 async function cambiarRolUsuario() {
   const id = document.getElementById('u-id').value;

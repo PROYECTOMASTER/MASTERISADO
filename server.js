@@ -198,6 +198,7 @@ app.get('/admin/compras',      ...adminPage('compras.html'));
 app.get('/admin/ventas',       ...adminPage('ventas.html'));
 app.get('/admin/reportes',     ...adminPage('reportes.html'));
 app.get('/admin/usuarios',     ...adminPage('usuarios.html'));
+app.get('/admin/perfil',        requireAuth, (req, res) => res.sendFile(path.join(__dirname, 'public', 'admin', 'perfil.html')));
 app.get('/caja',               requireAuth, (req, res) => res.sendFile(path.join(__dirname, 'public', 'caja', 'index.html')));
 
 // ── API: Catálogos ────────────────────────────────────────────────────────────
@@ -690,6 +691,43 @@ app.get('/api/usuarios', requireAuth, requirePermiso('usuarios'), async (_, res)
     `);
     res.json(r.rows);
   } catch (err) { res.status(500).json({ mensaje: err.message }); }
+});
+
+// Cambiar propia contraseña (cualquier usuario autenticado)
+app.post('/api/perfil/cambiar-clave', requireAuth, async (req, res) => {
+  const { clave_actual, clave_nueva } = req.body;
+  if (!clave_actual || !clave_nueva)
+    return res.json({ exito: false, mensaje: 'Completa todos los campos' });
+  if (clave_nueva.length < 1 || clave_nueva.length > 8)
+    return res.json({ exito: false, mensaje: 'La contraseña debe tener máximo 8 caracteres' });
+  try {
+    const r = await pool.query('SELECT password FROM usuarios WHERE id=$1', [req.session.usuario.id]);
+    if (!r.rows.length) return res.json({ exito: false, mensaje: 'Usuario no encontrado' });
+    if (!bcrypt.compareSync(clave_actual, r.rows[0].password))
+      return res.json({ exito: false, mensaje: 'La contraseña actual es incorrecta' });
+    const hash = bcrypt.hashSync(clave_nueva, 10);
+    await pool.query('UPDATE usuarios SET password=$1 WHERE id=$2', [hash, req.session.usuario.id]);
+    res.json({ exito: true });
+  } catch (err) { res.json({ exito: false, mensaje: err.message }); }
+});
+
+// Resetear contraseña de otro usuario (admin / superusuario)
+app.put('/api/usuarios/:id/reset-clave', requireAuth, requirePermiso('usuarios'), async (req, res) => {
+  const { clave_nueva } = req.body;
+  if (!clave_nueva || clave_nueva.length < 1 || clave_nueva.length > 8)
+    return res.json({ exito: false, mensaje: 'La contraseña debe tener máximo 8 caracteres' });
+  try {
+    const target = await pool.query(
+      `SELECT u.id, ro.nombre AS rol FROM usuarios u LEFT JOIN roles ro ON u.rol_id=ro.id WHERE u.id=$1`,
+      [req.params.id]
+    );
+    if (!target.rows.length) return res.json({ exito: false, mensaje: 'Usuario no encontrado' });
+    if (target.rows[0].rol === 'superusuario' && !req.session.usuario.permisos?.asignar_admin)
+      return res.json({ exito: false, mensaje: 'No tienes permiso para cambiar la clave del superusuario' });
+    const hash = bcrypt.hashSync(clave_nueva, 10);
+    await pool.query('UPDATE usuarios SET password=$1 WHERE id=$2', [hash, req.params.id]);
+    res.json({ exito: true });
+  } catch (err) { res.json({ exito: false, mensaje: err.message }); }
 });
 
 app.put('/api/usuarios/:id/rol', requireAuth, requirePermiso('usuarios'), async (req, res) => {

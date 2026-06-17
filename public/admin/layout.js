@@ -52,7 +52,7 @@ function renderNav(activo, sesion) {
   const nav = document.getElementById('nav-links');
   if (nav) nav.innerHTML = navHTML(activo, sesion.permisos);
   const nombreEl = document.getElementById('usuario-nombre');
-  if (nombreEl) nombreEl.textContent = `${sesion.nombre} · ${sesion.rol}`;
+  if (nombreEl) nombreEl.innerHTML = `<a href="/admin/perfil" style="color:#aab;text-decoration:none;font-size:12px" title="Mi perfil">👤 ${sesion.nombre} · ${sesion.rol}</a>`;
 }
 
 // Toast de notificación

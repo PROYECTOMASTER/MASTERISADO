@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+  <title>Mi perfil — MASTERISADO</title>
+  <script src="/admin/layout.js"></script>
+  <style id="base-css"></style>
+  <style>
+    .perfil-grid { display:grid; grid-template-columns:280px 1fr; gap:24px; align-items:start; }
+    .card-perfil { text-align:center; padding:32px 24px; }
+    .avatar { width:80px; height:80px; border-radius:50%; background:linear-gradient(135deg,#4A90D9,#1a1a2e); color:white; font-size:32px; font-weight:700; display:flex; align-items:center; justify-content:center; margin:0 auto 16px; }
+    .perfil-nombre { font-size:18px; font-weight:700; color:#1a1a2e; }
+    .perfil-usuario { font-size:13px; color:#888; margin-top:4px; }
+    .perfil-rol { margin-top:10px; }
+    .info-fila { display:flex; justify-content:space-between; padding:10px 0; border-bottom:1px solid #f0f0f5; font-size:13px; }
+    .info-fila:last-child { border-bottom:none; }
+    .info-label { color:#888; font-weight:600; }
+    .info-val { color:#1a1a2e; font-weight:500; }
+    .strength { height:4px; border-radius:2px; margin-top:6px; transition:all 0.3s; }
+    .strength-text { font-size:11px; margin-top:3px; }
+  </style>
+</head>
+<body>
+<header>
+  <h1>MASTERISADO</h1>
+  <div class="header-right">
+    <span id="usuario-nombre"></span>
+    <form action="/logout" method="POST" style="margin:0"><button type="submit" class="btn-logout">Salir</button></form>
+  </div>
+</header>
+<nav id="nav-links"></nav>
+
+<main>
+  <h2 style="font-size:16px;color:#1a1a2e;margin-bottom:20px">👤 Mi Perfil</h2>
+  <div class="perfil-grid">
+
+    <!-- Info del usuario -->
+    <div>
+      <div class="card card-perfil">
+        <div class="avatar" id="avatar-inicial">M</div>
+        <div class="perfil-nombre" id="info-nombre">—</div>
+        <div class="perfil-usuario" id="info-usuario">@—</div>
+        <div class="perfil-rol" id="info-rol"></div>
+      </div>
+      <div class="card" style="margin-top:0">
+        <div class="card-title">Información de cuenta</div>
+        <div class="info-fila"><span class="info-label">Nombre</span><span class="info-val" id="det-nombre">—</span></div>
+        <div class="info-fila"><span class="info-label">Usuario</span><span class="info-val" id="det-usuario">—</span></div>
+        <div class="info-fila"><span class="info-label">Rol</span><span class="info-val" id="det-rol">—</span></div>
+      </div>
+    </div>
+
+    <!-- Cambiar contraseña -->
+    <div class="card">
+      <div class="card-title">🔒 Cambiar contraseña</div>
+      <div class="campo" style="margin-bottom:14px">
+        <label>Contraseña actual *</label>
+        <input type="password" id="clave-actual" maxlength="8" placeholder="Tu contraseña actual"/>
+      </div>
+      <div class="campo" style="margin-bottom:6px">
+        <label>Nueva contraseña *</label>
+        <input type="password" id="clave-nueva" maxlength="8" placeholder="Máx. 8 caracteres" oninput="medirFuerza()"/>
+        <div class="strength" id="strength-bar" style="background:#e0e0e0;width:0%"></div>
+        <div class="strength-text" id="strength-text"></div>
+      </div>
+      <div class="campo" style="margin-bottom:20px">
+        <label>Confirmar nueva contraseña *</label>
+        <input type="password" id="clave-confirmar" maxlength="8" placeholder="Repite la nueva contraseña" oninput="verificarCoincide()"/>
+        <div id="msg-coincide" style="font-size:11px;margin-top:3px"></div>
+      </div>
+      <button class="btn btn-success" onclick="cambiarClave()" style="width:100%">Actualizar contraseña</button>
+      <div id="msg-clave" style="margin-top:12px;font-size:13px;display:none"></div>
+    </div>
+
+  </div>
+</main>
+
+<script>
+document.getElementById('base-css').textContent = CSS_BASE;
+let sesion = null;
+
+async function init() {
+  sesion = await cargarSesion();
+  if (!sesion) return;
+  renderNav('/admin/perfil', sesion);
+  const inicial = (sesion.nombre || sesion.usuario || '?')[0].toUpperCase();
+  document.getElementById('avatar-inicial').textContent = inicial;
+  document.getElementById('info-nombre').textContent = sesion.nombre;
+  document.getElementById('info-usuario').textContent = '@' + (sesion.usuario || '—');
+  document.getElementById('info-rol').innerHTML = badge(sesion.rol || '—', 'azul');
+  document.getElementById('det-nombre').textContent = sesion.nombre;
+  document.getElementById('det-usuario').textContent = sesion.usuario || '—';
+  document.getElementById('det-rol').textContent = sesion.rol || '—';
+}
+
+function medirFuerza() {
+  const v = document.getElementById('clave-nueva').value;
+  const bar = document.getElementById('strength-bar');
+  const txt = document.getElementById('strength-text');
+  if (!v) { bar.style.width = '0%'; txt.textContent = ''; return; }
+  let score = 0;
+  if (v.length >= 4) score++;
+  if (v.length >= 6) score++;
+  if (/[A-Z]/.test(v)) score++;
+  if (/[0-9]/.test(v)) score++;
+  if (/[^a-zA-Z0-9]/.test(v)) score++;
+  const niveles = [
+    { color:'#e74c3c', label:'Muy débil', w:'20%' },
+    { color:'#e74c3c', label:'Débil',     w:'30%' },
+    { color:'#f39c12', label:'Regular',   w:'50%' },
+    { color:'#f39c12', label:'Buena',     w:'70%' },
+    { color:'#27AE60', label:'Fuerte',    w:'90%' },
+    { color:'#27AE60', label:'Muy fuerte',w:'100%'},
+  ];
+  const n = niveles[Math.min(score, 5)];
+  bar.style.background = n.color;
+  bar.style.width = n.w;
+  txt.textContent = n.label;
+  txt.style.color = n.color;
+}
+
+function verificarCoincide() {
+  const nueva = document.getElementById('clave-nueva').value;
+  const conf  = document.getElementById('clave-confirmar').value;
+  const el = document.getElementById('msg-coincide');
+  if (!conf) { el.textContent = ''; return; }
+  if (nueva === conf) { el.textContent = '✓ Coinciden'; el.style.color = '#27AE60'; }
+  else { el.textContent = '✗ No coinciden'; el.style.color = '#e74c3c'; }
+}
+
+async function cambiarClave() {
+  const actual    = document.getElementById('clave-actual').value;
+  const nueva     = document.getElementById('clave-nueva').value;
+  const confirmar = document.getElementById('clave-confirmar').value;
+  const msg = document.getElementById('msg-clave');
+
+  if (!actual || !nueva || !confirmar) return mostrar(msg, 'Completa todos los campos', false);
+  if (nueva.length > 8) return mostrar(msg, 'La nueva contraseña debe tener máximo 8 caracteres', false);
+  if (nueva !== confirmar) return mostrar(msg, 'Las contraseñas no coinciden', false);
+
+  const r = await fetch('/api/perfil/cambiar-clave', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ clave_actual: actual, clave_nueva: nueva }),
+  });
+  const data = await r.json();
+  if (data.exito) {
+    mostrar(msg, '✅ Contraseña actualizada correctamente', true);
+    document.getElementById('clave-actual').value = '';
+    document.getElementById('clave-nueva').value = '';
+    document.getElementById('clave-confirmar').value = '';
+    document.getElementById('strength-bar').style.width = '0%';
+    document.getElementById('strength-text').textContent = '';
+    document.getElementById('msg-coincide').textContent = '';
+  } else {
+    mostrar(msg, '✗ ' + data.mensaje, false);
+  }
+}
+
+function mostrar(el, texto, exito) {
+  el.textContent = texto;
+  el.style.color = exito ? '#27AE60' : '#e74c3c';
+  el.style.display = 'block';
+  if (exito) setTimeout(() => el.style.display = 'none', 4000);
+}
+
+init();
+</script>
+</body>
+</html>
