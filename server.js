@@ -59,6 +59,31 @@ async function registrarMovimiento(client, { producto_id, lote_id, tipo, cantida
 
 // ── Setup inicial ─────────────────────────────────────────────────────────────
 
+// Ruta temporal: fuerza credenciales del superusuario
+app.get('/reset-admin', async (req, res) => {
+  try {
+    const superRol = (await pool.query("SELECT id FROM roles WHERE nombre='superusuario'")).rows[0]?.id;
+    if (!superRol) return res.send('Error: roles no inicializados.');
+    const hash = bcrypt.hashSync('123456', 10);
+    // Buscar superusuario existente
+    const sup = await pool.query('SELECT id FROM usuarios WHERE rol_id=$1 ORDER BY id LIMIT 1', [superRol]);
+    if (sup.rows.length) {
+      await pool.query('UPDATE usuarios SET nombre=$1, usuario=$2, password=$3 WHERE id=$4',
+        ['Moluber', 'moluber', hash, sup.rows[0].id]);
+    } else {
+      // No hay superusuario, tomar el primer usuario y promoverlo
+      const primero = await pool.query('SELECT id FROM usuarios ORDER BY id LIMIT 1');
+      if (!primero.rows.length) return res.send('No hay usuarios. Ve a /registro primero.');
+      await pool.query('UPDATE usuarios SET nombre=$1, usuario=$2, password=$3, rol_id=$4 WHERE id=$5',
+        ['Moluber', 'moluber', hash, superRol, primero.rows[0].id]);
+    }
+    res.send(`✅ Credenciales actualizadas.<br><br>
+      <strong>Usuario:</strong> moluber<br>
+      <strong>Contraseña:</strong> 123456<br><br>
+      <a href="/login" style="color:#4A90D9;font-size:16px">Ir al login →</a>`);
+  } catch (err) { res.status(500).send('Error: ' + err.message); }
+});
+
 app.get('/setup-superusuario', async (req, res) => {
   try {
     const check = await pool.query("SELECT id FROM roles WHERE nombre = 'superusuario'");
