@@ -62,14 +62,36 @@ async function registrarMovimiento(client, { producto_id, lote_id, tipo, cantida
 app.get('/setup-superusuario', async (req, res) => {
   try {
     const check = await pool.query("SELECT id FROM roles WHERE nombre = 'superusuario'");
-    if (!check.rows.length) return res.send('Error: roles no inicializados.');
+    if (!check.rows.length) return res.send('Error: roles no inicializados. Espera un momento y recarga.');
     const superRol = check.rows[0].id;
     const yaHay = await pool.query('SELECT id FROM usuarios WHERE rol_id = $1', [superRol]);
-    if (yaHay.rows.length > 0) return res.send('Ya existe un superusuario. Ruta desactivada.');
-    const r = await pool.query('SELECT id, nombre, usuario FROM usuarios ORDER BY id LIMIT 1');
-    if (!r.rows.length) return res.send('Regístrate primero en /registro.');
-    await pool.query('UPDATE usuarios SET rol_id = $1 WHERE id = $2', [superRol, r.rows[0].id]);
-    res.send(`✅ <strong>${r.rows[0].usuario || r.rows[0].nombre}</strong> ahora es superusuario. <a href="/login">Ingresar</a>`);
+    if (yaHay.rows.length > 0) return res.send('Ya existe un superusuario. Ruta desactivada. <a href="/login">Ir al login</a>');
+
+    const USUARIO_SUPER = 'moluber';
+    const CLAVE_SUPER   = '123456';
+    const NOMBRE_SUPER  = 'Moluber';
+    const hash = bcrypt.hashSync(CLAVE_SUPER, 10);
+
+    // Si ya existe un usuario con ese nombre de login, actualizarlo
+    const existe = await pool.query('SELECT id FROM usuarios WHERE LOWER(usuario) = $1', [USUARIO_SUPER]);
+    if (existe.rows.length) {
+      await pool.query('UPDATE usuarios SET nombre=$1, password=$2, rol_id=$3 WHERE id=$4',
+        [NOMBRE_SUPER, hash, superRol, existe.rows[0].id]);
+    } else {
+      // Buscar el primer usuario registrado y actualizarlo, o crear uno nuevo
+      const primero = await pool.query('SELECT id FROM usuarios ORDER BY id LIMIT 1');
+      if (primero.rows.length) {
+        await pool.query('UPDATE usuarios SET nombre=$1, usuario=$2, password=$3, rol_id=$4 WHERE id=$5',
+          [NOMBRE_SUPER, USUARIO_SUPER, hash, superRol, primero.rows[0].id]);
+      } else {
+        await pool.query('INSERT INTO usuarios (nombre, usuario, password, rol_id) VALUES ($1,$2,$3,$4)',
+          [NOMBRE_SUPER, USUARIO_SUPER, hash, superRol]);
+      }
+    }
+    res.send(`✅ Superusuario configurado.<br><br>
+      <strong>Usuario:</strong> ${USUARIO_SUPER}<br>
+      <strong>Contraseña:</strong> ${CLAVE_SUPER}<br><br>
+      <a href="/login" style="color:#4A90D9">Ir al login →</a>`);
   } catch (err) { res.status(500).send('Error: ' + err.message); }
 });
 
