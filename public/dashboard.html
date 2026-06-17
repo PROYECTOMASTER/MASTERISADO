@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Dashboard — MASTERISADO</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      min-height: 100vh;
+      background: #f0f2f5;
+      font-family: 'Segoe UI', system-ui, sans-serif;
+    }
+
+    header {
+      background: white;
+      padding: 16px 32px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      box-shadow: 0 1px 8px rgba(0,0,0,0.08);
+    }
+
+    header h1 { font-size: 20px; font-weight: 700; color: #1a1a2e; }
+
+    .usuario-info {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .avatar {
+      width: 38px; height: 38px;
+      background: #4A90D9;
+      border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      color: white; font-weight: 700; font-size: 15px;
+    }
+
+    .nombre { font-size: 14px; font-weight: 600; color: #333; }
+    .email-txt { font-size: 12px; color: #888; }
+
+    .btn-salir {
+      padding: 8px 18px;
+      background: #fff0f0;
+      color: #c0392b;
+      border: 1px solid #f5c6c6;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    .btn-salir:hover { background: #fde0e0; }
+
+    main {
+      max-width: 900px;
+      margin: 40px auto;
+      padding: 0 24px;
+    }
+
+    .bienvenida {
+      background: white;
+      border-radius: 12px;
+      padding: 32px;
+      box-shadow: 0 2px 12px rgba(0,0,0,0.07);
+      margin-bottom: 24px;
+    }
+
+    .bienvenida h2 { font-size: 22px; color: #1a1a2e; margin-bottom: 8px; }
+    .bienvenida p  { font-size: 14px; color: #666; line-height: 1.6; }
+
+    .tarjetas {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 16px;
+    }
+
+    .tarjeta {
+      background: white;
+      border-radius: 12px;
+      padding: 24px;
+      box-shadow: 0 2px 12px rgba(0,0,0,0.07);
+      text-align: center;
+    }
+
+    .tarjeta .icono { font-size: 36px; margin-bottom: 12px; }
+    .tarjeta h3 { font-size: 15px; font-weight: 600; color: #1a1a2e; }
+    .tarjeta p  { font-size: 13px; color: #888; margin-top: 4px; }
+  </style>
+</head>
+<body>
+
+  <header>
+    <h1>MASTERISADO</h1>
+    <div class="usuario-info">
+      <div>
+        <div class="avatar" id="avatar">M</div>
+      </div>
+      <div>
+        <div class="nombre" id="nombre-usuario">Cargando...</div>
+        <div class="email-txt" id="email-usuario"></div>
+      </div>
+      <form action="/logout" method="POST">
+        <button type="submit" class="btn-salir">Cerrar sesión</button>
+      </form>
+    </div>
+  </header>
+
+  <main>
+    <div class="bienvenida">
+      <h2 id="saludo">Bienvenido</h2>
+      <p>Has iniciado sesión correctamente. Este es tu panel de control de MASTERISADO.</p>
+    </div>
+
+    <div class="tarjetas">
+      <div class="tarjeta">
+        <div class="icono">📚</div>
+        <h3>Módulos</h3>
+        <p>Accede a tu contenido</p>
+      </div>
+      <div class="tarjeta">
+        <div class="icono">📊</div>
+        <h3>Progreso</h3>
+        <p>Revisa tu avance</p>
+      </div>
+      <div class="tarjeta">
+        <div class="icono">🏆</div>
+        <h3>Logros</h3>
+        <p>Tus certificados</p>
+      </div>
+      <div class="tarjeta">
+        <div class="icono">⚙️</div>
+        <h3>Perfil</h3>
+        <p>Edita tu cuenta</p>
+      </div>
+    </div>
+  </main>
+
+  <script>
+    fetch('/api/usuario')
+      .then(r => r.json())
+      .then(u => {
+        document.getElementById('nombre-usuario').textContent = u.nombre;
+        document.getElementById('email-usuario').textContent = u.email;
+        document.getElementById('saludo').textContent = `Bienvenida, ${u.nombre.split(' ')[0]} 👋`;
+        document.getElementById('avatar').textContent = u.nombre.charAt(0).toUpperCase();
+      })
+      .catch(() => window.location.href = '/login');
+  </script>
+
+</body>
+</html>
