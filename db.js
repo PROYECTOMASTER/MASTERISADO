@@ -191,6 +191,33 @@ async function inicializarDB() {
       ON CONFLICT DO NOTHING;
     `);
 
+    // Migración: columna usuario como nuevo identificador de login
+    await client.query(`ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS usuario VARCHAR(8)`);
+    await client.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_usuarios_usuario ON usuarios(usuario) WHERE usuario IS NOT NULL`);
+    // Hacer email opcional (ya no es el identificador principal)
+    await client.query(`
+      DO $$ BEGIN
+        ALTER TABLE usuarios ALTER COLUMN email DROP NOT NULL;
+      EXCEPTION WHEN OTHERS THEN NULL; END $$;
+    `);
+    // Generar usuario para cuentas existentes que no lo tengan
+    const sinUsuario = await client.query(`SELECT id, email, nombre FROM usuarios WHERE usuario IS NULL`);
+    for (const u of sinUsuario.rows) {
+      let base = '';
+      if (u.email) base = u.email.split('@')[0].replace(/[^a-zA-Z0-9]/g, '').substring(0, 8).toLowerCase();
+      if (!base && u.nombre) base = u.nombre.replace(/[^a-zA-Z0-9]/g, '').substring(0, 8).toLowerCase();
+      if (!base) base = 'user' + u.id;
+      base = base.substring(0, 8);
+      // Si ya existe, agregar sufijo numérico
+      let username = base, n = 1;
+      while (true) {
+        const existe = await client.query(`SELECT id FROM usuarios WHERE usuario = $1`, [username]);
+        if (!existe.rows.length) break;
+        username = base.substring(0, 7) + (n++);
+      }
+      await client.query(`UPDATE usuarios SET usuario = $1 WHERE id = $2`, [username, u.id]);
+    }
+
     // Migrar usuarios existentes: asignar rol administrador si rol_id es null
     await client.query(`
       UPDATE usuarios SET rol_id = (SELECT id FROM roles WHERE nombre = 'administrador')

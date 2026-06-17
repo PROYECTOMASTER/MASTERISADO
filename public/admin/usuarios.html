@@ -44,7 +44,7 @@
       </div>
       <div class="tabla-wrap">
         <table>
-          <thead><tr><th>Nombre</th><th>Email</th><th>Rol</th><th>Registro</th><th>Acciones</th></tr></thead>
+          <thead><tr><th>Nombre</th><th>Usuario</th><th>Rol</th><th>Registro</th><th>Acciones</th></tr></thead>
           <tbody id="tabla-usuarios"><tr><td colspan="5" style="text-align:center;color:#aaa;padding:30px">Cargando...</td></tr></tbody>
         </table>
       </div>
@@ -141,7 +141,7 @@ function renderTablaUsuarios(lista) {
     const colorRol = u.rol==='superusuario'?'azul':u.rol==='administrador'?'verde':'gris';
     return `<tr>
       <td><strong>${u.nombre}</strong></td>
-      <td style="font-size:12px;color:#888">${u.email}</td>
+      <td><code style="font-size:12px;color:#4A90D9">${u.usuario||'—'}</code></td>
       <td>${badge(u.rol||'—', colorRol)}</td>
       <td style="font-size:12px;color:#888">${fmtFecha(u.creado_en)}</td>
       <td>

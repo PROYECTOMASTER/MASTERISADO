@@ -66,10 +66,10 @@ app.get('/setup-superusuario', async (req, res) => {
     const superRol = check.rows[0].id;
     const yaHay = await pool.query('SELECT id FROM usuarios WHERE rol_id = $1', [superRol]);
     if (yaHay.rows.length > 0) return res.send('Ya existe un superusuario. Ruta desactivada.');
-    const r = await pool.query('SELECT id, email FROM usuarios ORDER BY id LIMIT 1');
-    if (!r.rows.length) return res.send('Regístrate primero.');
+    const r = await pool.query('SELECT id, nombre, usuario FROM usuarios ORDER BY id LIMIT 1');
+    if (!r.rows.length) return res.send('Regístrate primero en /registro.');
     await pool.query('UPDATE usuarios SET rol_id = $1 WHERE id = $2', [superRol, r.rows[0].id]);
-    res.send(`✅ <strong>${r.rows[0].email}</strong> ahora es superusuario. <a href="/login">Ingresar</a>`);
+    res.send(`✅ <strong>${r.rows[0].usuario || r.rows[0].nombre}</strong> ahora es superusuario. <a href="/login">Ingresar</a>`);
   } catch (err) { res.status(500).send('Error: ' + err.message); }
 });
 
@@ -86,19 +86,25 @@ app.get('/registro', (req, res) => {
 });
 
 app.post('/login', async (req, res) => {
-  const { email, password } = req.body;
+  const { usuario, password } = req.body;
+  if (!usuario || !password)
+    return res.json({ exito: false, mensaje: 'Ingresa usuario y contraseña' });
+  if (!/^[a-zA-Z0-9]{1,8}$/.test(usuario))
+    return res.json({ exito: false, mensaje: 'Usuario inválido' });
+  if (password.length > 8)
+    return res.json({ exito: false, mensaje: 'Contraseña inválida' });
   try {
     const r = await pool.query(`
       SELECT u.*, ro.nombre AS rol_nombre, ro.permisos
       FROM usuarios u
       LEFT JOIN roles ro ON u.rol_id = ro.id
-      WHERE u.email = $1
-    `, [email]);
+      WHERE LOWER(u.usuario) = LOWER($1)
+    `, [usuario]);
     const u = r.rows[0];
     if (!u || !bcrypt.compareSync(password, u.password))
-      return res.json({ exito: false, mensaje: 'Correo o contraseña incorrectos' });
+      return res.json({ exito: false, mensaje: 'Usuario o contraseña incorrectos' });
     req.session.usuario = {
-      id: u.id, nombre: u.nombre, email: u.email,
+      id: u.id, nombre: u.nombre, usuario: u.usuario,
       rol: u.rol_nombre, permisos: u.permisos || {}
     };
     const destino = u.permisos?.ventas && !u.permisos?.productos ? '/caja' : '/admin';
@@ -107,14 +113,19 @@ app.post('/login', async (req, res) => {
 });
 
 app.post('/registro', async (req, res) => {
-  const { nombre, email, password } = req.body;
+  const { nombre, usuario, password } = req.body;
+  if (!nombre?.trim()) return res.json({ exito: false, mensaje: 'El nombre es requerido' });
+  if (!/^[a-zA-Z0-9]{1,8}$/.test(usuario))
+    return res.json({ exito: false, mensaje: 'Usuario: solo letras y números, máximo 8 caracteres' });
+  if (!password || password.length < 1 || password.length > 8)
+    return res.json({ exito: false, mensaje: 'Contraseña: máximo 8 caracteres' });
   try {
-    const existe = await pool.query('SELECT id FROM usuarios WHERE email=$1', [email]);
-    if (existe.rows.length) return res.json({ exito: false, mensaje: 'Correo ya registrado' });
+    const existe = await pool.query('SELECT id FROM usuarios WHERE LOWER(usuario)=LOWER($1)', [usuario]);
+    if (existe.rows.length) return res.json({ exito: false, mensaje: 'Ese usuario ya está registrado' });
     const rol = await pool.query("SELECT id FROM roles WHERE nombre='cajero'");
     const hash = bcrypt.hashSync(password, 10);
-    await pool.query('INSERT INTO usuarios (nombre,email,password,rol_id) VALUES($1,$2,$3,$4)',
-      [nombre, email, hash, rol.rows[0]?.id || null]);
+    await pool.query('INSERT INTO usuarios (nombre,usuario,password,rol_id) VALUES($1,$2,$3,$4)',
+      [nombre.trim(), usuario.toLowerCase(), hash, rol.rows[0]?.id || null]);
     res.json({ exito: true });
   } catch (err) { console.error(err); res.json({ exito: false, mensaje: 'Error al registrar' }); }
 });
@@ -627,7 +638,7 @@ app.get('/api/reportes/ventas-productos', requireAuth, requirePermiso('reportes'
 app.get('/api/usuarios', requireAuth, requirePermiso('usuarios'), async (_, res) => {
   try {
     const r = await pool.query(`
-      SELECT u.id, u.nombre, u.email, u.creado_en, ro.nombre AS rol, ro.id AS rol_id
+      SELECT u.id, u.nombre, u.usuario, u.creado_en, ro.nombre AS rol, ro.id AS rol_id
       FROM usuarios u LEFT JOIN roles ro ON u.rol_id=ro.id ORDER BY u.nombre
     `);
     res.json(r.rows);
