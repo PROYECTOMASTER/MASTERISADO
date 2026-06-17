@@ -162,6 +162,7 @@
 </div>
 
 <script>
+const fmtMoneda = v => '$' + parseFloat(v || 0).toLocaleString('es-CO', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
 let productos = [], carrito = [];
 
 async function init() {
@@ -185,7 +186,7 @@ function renderGrid(lista) {
     const agotado = p.stock_actual <= 0;
     return `<div class="prod-card ${agotado?'agotado':''}" onclick="${agotado?'':'agregarAlCarrito('+p.id+')'}">
       <div class="prod-nombre">${p.nombre}</div>
-      <div class="prod-precio">$${parseFloat(p.precio_venta).toLocaleString('es-CO')}</div>
+      <div class="prod-precio">${fmtMoneda(p.precio_venta)}</div>
       <div class="prod-stock">${agotado?'Agotado':'Stock: '+p.stock_actual}</div>
       <div class="prod-iva">IVA ${p.iva_porcentaje}%</div>
     </div>`;
@@ -222,14 +223,14 @@ function renderTicket() {
     <div class="ticket-item">
       <div>
         <div class="item-nombre">${it.nombre}</div>
-        <div class="item-precio">$${it.precio.toLocaleString('es-CO')} × ${it.cantidad}</div>
+        <div class="item-precio">${fmtMoneda(it.precio)} × ${it.cantidad}</div>
       </div>
       <div class="item-qty">
         <button class="qty-btn" onclick="cambiarQty(${i},-1)">−</button>
         <span class="qty-num">${it.cantidad}</span>
         <button class="qty-btn" onclick="cambiarQty(${i},1)">+</button>
       </div>
-      <div class="item-subtotal">$${(it.precio*it.cantidad).toLocaleString('es-CO')}</div>
+      <div class="item-subtotal">${fmtMoneda(it.precio*it.cantidad)}</div>
       <button class="item-del" onclick="eliminarItem(${i})">✕</button>
     </div>
   `).join('');
@@ -256,16 +257,16 @@ function actualizarTotales() {
     ivaTotal += iva;
   });
   const total = subtotal + ivaTotal;
-  document.getElementById('res-subtotal').textContent = '$' + subtotal.toLocaleString('es-CO',{maximumFractionDigits:0});
-  document.getElementById('res-iva').textContent = '$' + ivaTotal.toLocaleString('es-CO',{maximumFractionDigits:0});
-  document.getElementById('res-total').textContent = '$' + total.toLocaleString('es-CO',{maximumFractionDigits:0});
+  document.getElementById('res-subtotal').textContent = fmtMoneda(subtotal);
+  document.getElementById('res-iva').textContent = fmtMoneda(ivaTotal);
+  document.getElementById('res-total').textContent = fmtMoneda(total);
   document.getElementById('btn-cobrar').disabled = carrito.length === 0;
   return total;
 }
 
 function abrirPago() {
   const total = actualizarTotales();
-  document.getElementById('monto-cobrar').textContent = '$' + total.toLocaleString('es-CO',{maximumFractionDigits:0});
+  document.getElementById('monto-cobrar').textContent = fmtMoneda(total);
   document.getElementById('efectivo').value = '';
   document.getElementById('cambio-row').innerHTML = '';
   document.getElementById('modal-pago').classList.add('open');
@@ -280,8 +281,8 @@ function calcularCambio() {
   const cambio = efectivo - total;
   const el = document.getElementById('cambio-row');
   if (efectivo > 0) {
-    if (cambio < 0) el.innerHTML = `<span style="color:#e74c3c">Faltan: $${Math.abs(cambio).toLocaleString('es-CO',{maximumFractionDigits:0})}</span>`;
-    else el.innerHTML = `Cambio: <span class="cambio-val">$${cambio.toLocaleString('es-CO',{maximumFractionDigits:0})}</span>`;
+    if (cambio < 0) el.innerHTML = `<span style="color:#e74c3c">Faltan: ${fmtMoneda(Math.abs(cambio))}</span>`;
+    else el.innerHTML = `Cambio: <span class="cambio-val">${fmtMoneda(cambio)}</span>`;
   } else { el.innerHTML = ''; }
 }
 
@@ -310,11 +311,11 @@ async function procesarVenta() {
 function mostrarRecibo(data, efectivo, total) {
   document.getElementById('rec-fecha').textContent = new Date().toLocaleString('es-CO');
   document.getElementById('rec-items').innerHTML = data.items
-    ? data.items.map(it=>`<div class="recibo-line"><span>${it.producto} × ${it.cantidad}</span><span>$${(it.precio_unit*it.cantidad).toLocaleString('es-CO',{maximumFractionDigits:0})}</span></div>`).join('')
-    : carrito.map(it=>`<div class="recibo-line"><span>${it.nombre} × ${it.cantidad}</span><span>$${(it.precio*it.cantidad).toLocaleString('es-CO',{maximumFractionDigits:0})}</span></div>`).join('');
-  document.getElementById('rec-total').textContent = '$' + total.toLocaleString('es-CO',{maximumFractionDigits:0});
-  document.getElementById('rec-efectivo').textContent = '$' + efectivo.toLocaleString('es-CO',{maximumFractionDigits:0});
-  document.getElementById('rec-cambio').textContent = '$' + (efectivo-total).toLocaleString('es-CO',{maximumFractionDigits:0});
+    ? data.items.map(it=>`<div class="recibo-line"><span>${it.producto} × ${it.cantidad}</span><span>${fmtMoneda(it.precio_unit*it.cantidad)}</span></div>`).join('')
+    : carrito.map(it=>`<div class="recibo-line"><span>${it.nombre} × ${it.cantidad}</span><span>${fmtMoneda(it.precio*it.cantidad)}</span></div>`).join('');
+  document.getElementById('rec-total').textContent = fmtMoneda(total);
+  document.getElementById('rec-efectivo').textContent = fmtMoneda(efectivo);
+  document.getElementById('rec-cambio').textContent = fmtMoneda(efectivo - total);
   document.getElementById('recibo-overlay').classList.add('open');
 }
 
