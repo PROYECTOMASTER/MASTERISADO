@@ -157,7 +157,7 @@
         const data = await res.json();
 
         if (data.exito) {
-          window.location.href = '/dashboard';
+          window.location.href = data.rol === 'admin' ? '/admin/productos' : '/tienda';
         } else {
           errorMsg.textContent = data.mensaje;
           errorMsg.style.display = 'block';

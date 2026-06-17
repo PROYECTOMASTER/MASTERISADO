@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Tienda — MASTERISADO</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Segoe UI', system-ui, sans-serif; background: #f0f2f5; min-height: 100vh; }
+
+    header {
+      background: #1a1a2e; color: white;
+      padding: 14px 28px; display: flex; align-items: center; justify-content: space-between; position: sticky; top: 0; z-index: 50;
+    }
+    header h1 { font-size: 18px; letter-spacing: 1px; }
+    .header-right { display: flex; align-items: center; gap: 16px; }
+    .saludo { font-size: 13px; color: #aab; }
+
+    .carrito-btn {
+      background: #4A90D9; color: white; border: none;
+      padding: 8px 16px; border-radius: 8px; cursor: pointer;
+      font-size: 13px; font-weight: 600; display: flex; align-items: center; gap: 8px;
+    }
+    .carrito-count {
+      background: #e74c3c; color: white;
+      border-radius: 50%; width: 20px; height: 20px;
+      display: inline-flex; align-items: center; justify-content: center;
+      font-size: 11px; font-weight: 700;
+    }
+
+    .btn-logout { background: none; border: none; color: #aab; cursor: pointer; font-size: 13px; }
+    .btn-logout:hover { color: white; }
+
+    main { max-width: 1200px; margin: 32px auto; padding: 0 20px; }
+
+    .buscador-bar {
+      display: flex; gap: 12px; margin-bottom: 24px; align-items: center;
+    }
+    .buscador-bar input {
+      flex: 1; padding: 10px 16px; border-radius: 8px;
+      border: 1.5px solid #d0d5dd; font-size: 14px; outline: none;
+    }
+    .buscador-bar input:focus { border-color: #4A90D9; }
+
+    .productos-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+      gap: 20px;
+    }
+
+    .producto-card {
+      background: white; border-radius: 12px;
+      box-shadow: 0 2px 12px rgba(0,0,0,0.07);
+      overflow: hidden; display: flex; flex-direction: column;
+      transition: transform 0.15s, box-shadow 0.15s;
+    }
+    .producto-card:hover { transform: translateY(-3px); box-shadow: 0 6px 20px rgba(0,0,0,0.12); }
+
+    .producto-img {
+      width: 100%; height: 160px; object-fit: cover; background: #eef0f5;
+      display: flex; align-items: center; justify-content: center; color: #bbb; font-size: 40px;
+    }
+    .producto-img img { width: 100%; height: 100%; object-fit: cover; }
+
+    .producto-info { padding: 16px; flex: 1; display: flex; flex-direction: column; gap: 6px; }
+    .producto-nombre { font-size: 14px; font-weight: 700; color: #1a1a2e; }
+    .producto-desc { font-size: 12px; color: #888; line-height: 1.5; flex: 1; }
+    .producto-precio { font-size: 18px; font-weight: 700; color: #4A90D9; }
+    .producto-stock { font-size: 12px; color: #888; }
+    .producto-stock.bajo { color: #e74c3c; font-weight: 600; }
+
+    .btn-agregar {
+      margin: 0 16px 16px; padding: 10px;
+      background: #27AE60; color: white;
+      border: none; border-radius: 8px;
+      font-size: 13px; font-weight: 600; cursor: pointer;
+      transition: background 0.2s;
+    }
+    .btn-agregar:hover { background: #219a52; }
+    .btn-agregar:disabled { background: #ccc; cursor: not-allowed; }
+
+    /* Panel carrito */
+    .carrito-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,0.4); z-index:200; }
+    .carrito-overlay.open { display:block; }
+    .carrito-panel {
+      position: fixed; right: 0; top: 0; bottom: 0; width: 360px;
+      background: white; z-index: 201; padding: 24px;
+      display: flex; flex-direction: column; box-shadow: -4px 0 24px rgba(0,0,0,0.12);
+      transform: translateX(100%); transition: transform 0.25s;
+    }
+    .carrito-panel.open { transform: translateX(0); }
+
+    .carrito-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+    .carrito-header h2 { font-size: 18px; color: #1a1a2e; }
+    .cerrar-carrito { background: none; border: none; font-size: 22px; cursor: pointer; color: #888; }
+
+    .carrito-items { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; }
+    .carrito-item {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 12px; background: #f8f9fa; border-radius: 8px;
+    }
+    .carrito-item-info { flex: 1; }
+    .carrito-item-nombre { font-size: 13px; font-weight: 600; color: #1a1a2e; }
+    .carrito-item-precio { font-size: 12px; color: #4A90D9; }
+    .carrito-item-controles { display: flex; align-items: center; gap: 8px; }
+    .qty-btn { width:28px; height:28px; border-radius:6px; border:1.5px solid #d0d5dd; background:white; cursor:pointer; font-size:16px; display:flex; align-items:center; justify-content:center; }
+    .qty-num { font-size: 14px; font-weight: 600; min-width: 20px; text-align: center; }
+
+    .carrito-footer { border-top: 1px solid #eee; padding-top: 16px; margin-top: 16px; }
+    .carrito-total { display: flex; justify-content: space-between; font-size: 16px; font-weight: 700; margin-bottom: 16px; }
+    .btn-comprar {
+      width: 100%; padding: 13px; background: #4A90D9; color: white;
+      border: none; border-radius: 8px; font-size: 15px; font-weight: 700; cursor: pointer;
+    }
+    .btn-comprar:hover { background: #357ABD; }
+    .btn-comprar:disabled { background: #aaa; cursor: not-allowed; }
+
+    .carrito-vacio { text-align: center; color: #aaa; margin-top: 60px; font-size: 14px; }
+
+    .msg-compra { padding:12px; border-radius:8px; font-size:13px; margin-top:12px; display:none; text-align:center; }
+    .msg-ok2  { background: #f0fff4; color: #1e7e34; border: 1px solid #b7ebc8; }
+    .msg-err2 { background: #fff0f0; color: #c0392b; border: 1px solid #f5c6c6; }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>MASTERISADO — Tienda</h1>
+  <div class="header-right">
+    <span class="saludo" id="saludo"></span>
+    <button class="carrito-btn" onclick="abrirCarrito()">
+      🛒 Carrito <span class="carrito-count" id="carrito-count">0</span>
+    </button>
+    <form action="/logout" method="POST" style="margin:0">
+      <button type="submit" class="btn-logout">Salir</button>
+    </form>
+  </div>
+</header>
+
+<main>
+  <div class="buscador-bar">
+    <input type="text" id="buscador" placeholder="Buscar producto..." oninput="filtrar()" />
+  </div>
+  <div class="productos-grid" id="productos-grid">
+    <p style="color:#aaa">Cargando productos...</p>
+  </div>
+</main>
+
+<!-- Carrito -->
+<div class="carrito-overlay" id="carrito-overlay" onclick="cerrarCarrito()"></div>
+<div class="carrito-panel" id="carrito-panel">
+  <div class="carrito-header">
+    <h2>Tu carrito</h2>
+    <button class="cerrar-carrito" onclick="cerrarCarrito()">✕</button>
+  </div>
+  <div class="carrito-items" id="carrito-items"></div>
+  <div class="carrito-footer">
+    <div class="carrito-total">
+      <span>Total</span>
+      <span id="carrito-total">$0</span>
+    </div>
+    <button class="btn-comprar" id="btn-comprar" onclick="confirmarCompra()">Confirmar compra</button>
+    <div class="msg-compra msg-ok2" id="msg-ok2"></div>
+    <div class="msg-compra msg-err2" id="msg-err2"></div>
+  </div>
+</div>
+
+<script>
+  let productos = [];
+  let carrito = {}; // { producto_id: { producto, cantidad } }
+
+  fetch('/api/usuario').then(r => r.json()).then(u => {
+    document.getElementById('saludo').textContent = `Hola, ${u.nombre.split(' ')[0]}`;
+    if (u.rol === 'admin') {
+      const link = document.createElement('a');
+      link.href = '/admin/productos';
+      link.textContent = 'Panel Admin';
+      link.style.cssText = 'color:#4A90D9;font-size:13px;text-decoration:none;font-weight:600';
+      document.querySelector('.header-right').prepend(link);
+    }
+  });
+
+  async function cargarProductos() {
+    const r = await fetch('/api/productos');
+    productos = await r.json();
+    renderProductos(productos);
+  }
+
+  function renderProductos(lista) {
+    const grid = document.getElementById('productos-grid');
+    if (!lista.length) {
+      grid.innerHTML = '<p style="color:#aaa;grid-column:1/-1;text-align:center;padding:40px">No hay productos disponibles</p>';
+      return;
+    }
+    grid.innerHTML = lista.map(p => `
+      <div class="producto-card">
+        <div class="producto-img">
+          ${p.imagen_url ? `<img src="${p.imagen_url}" alt="${p.nombre}" />` : '📦'}
+        </div>
+        <div class="producto-info">
+          <div class="producto-nombre">${p.nombre}</div>
+          ${p.descripcion ? `<div class="producto-desc">${p.descripcion}</div>` : ''}
+          <div class="producto-precio">$${parseFloat(p.precio).toLocaleString('es-CO', {minimumFractionDigits:2})}</div>
+          <div class="producto-stock ${p.stock <= 5 ? 'bajo' : ''}">
+            ${p.stock <= 0 ? 'Sin stock' : p.stock <= 5 ? `Solo ${p.stock} disponibles` : `${p.stock} disponibles`}
+          </div>
+        </div>
+        <button class="btn-agregar" onclick="agregarAlCarrito(${p.id})" ${p.stock <= 0 ? 'disabled' : ''}>
+          ${p.stock <= 0 ? 'Sin stock' : '+ Agregar al carrito'}
+        </button>
+      </div>
+    `).join('');
+  }
+
+  function filtrar() {
+    const q = document.getElementById('buscador').value.toLowerCase();
+    renderProductos(productos.filter(p => p.nombre.toLowerCase().includes(q) || (p.descripcion || '').toLowerCase().includes(q)));
+  }
+
+  function agregarAlCarrito(id) {
+    const p = productos.find(x => x.id === id);
+    if (!p) return;
+    if (carrito[id]) {
+      if (carrito[id].cantidad >= p.stock) return;
+      carrito[id].cantidad++;
+    } else {
+      carrito[id] = { producto: p, cantidad: 1 };
+    }
+    actualizarCarrito();
+  }
+
+  function cambiarCantidad(id, delta) {
+    if (!carrito[id]) return;
+    carrito[id].cantidad += delta;
+    if (carrito[id].cantidad <= 0) delete carrito[id];
+    actualizarCarrito();
+  }
+
+  function actualizarCarrito() {
+    const items = Object.values(carrito);
+    const total = items.reduce((s, i) => s + i.producto.precio * i.cantidad, 0);
+    document.getElementById('carrito-count').textContent = items.reduce((s, i) => s + i.cantidad, 0);
+    document.getElementById('carrito-total').textContent = '$' + total.toLocaleString('es-CO', {minimumFractionDigits:2});
+
+    const el = document.getElementById('carrito-items');
+    if (!items.length) {
+      el.innerHTML = '<div class="carrito-vacio">Tu carrito está vacío</div>';
+      return;
+    }
+    el.innerHTML = items.map(i => `
+      <div class="carrito-item">
+        <div class="carrito-item-info">
+          <div class="carrito-item-nombre">${i.producto.nombre}</div>
+          <div class="carrito-item-precio">$${parseFloat(i.producto.precio).toLocaleString('es-CO', {minimumFractionDigits:2})} c/u</div>
+        </div>
+        <div class="carrito-item-controles">
+          <button class="qty-btn" onclick="cambiarCantidad(${i.producto.id}, -1)">−</button>
+          <span class="qty-num">${i.cantidad}</span>
+          <button class="qty-btn" onclick="cambiarCantidad(${i.producto.id}, 1)">+</button>
+        </div>
+      </div>
+    `).join('');
+  }
+
+  function abrirCarrito() {
+    document.getElementById('carrito-overlay').classList.add('open');
+    document.getElementById('carrito-panel').classList.add('open');
+    actualizarCarrito();
+  }
+
+  function cerrarCarrito() {
+    document.getElementById('carrito-overlay').classList.remove('open');
+    document.getElementById('carrito-panel').classList.remove('open');
+  }
+
+  async function confirmarCompra() {
+    const items = Object.values(carrito).map(i => ({ producto_id: i.producto.id, cantidad: i.cantidad }));
+    if (!items.length) return;
+
+    document.getElementById('btn-comprar').disabled = true;
+    document.getElementById('msg-ok2').style.display = 'none';
+    document.getElementById('msg-err2').style.display = 'none';
+
+    const r = await fetch('/api/comprar', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ items }) });
+    const data = await r.json();
+
+    if (data.exito) {
+      carrito = {};
+      actualizarCarrito();
+      const el = document.getElementById('msg-ok2');
+      el.textContent = `Compra #${data.venta_id} confirmada. Total: $${parseFloat(data.total).toLocaleString('es-CO', {minimumFractionDigits:2})}`;
+      el.style.display = 'block';
+      cargarProductos();
+    } else {
+      const el = document.getElementById('msg-err2');
+      el.textContent = data.mensaje;
+      el.style.display = 'block';
+    }
+    document.getElementById('btn-comprar').disabled = false;
+  }
+
+  cargarProductos();
+  actualizarCarrito();
+</script>
+</body>
+</html>
