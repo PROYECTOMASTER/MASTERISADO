@@ -32,6 +32,23 @@ const requireAdmin = (req, res, next) => {
   next();
 };
 
+// ── Setup inicial (solo funciona si no hay ningún admin aún) ─────────────────
+
+app.get('/setup-admin', async (req, res) => {
+  try {
+    const check = await pool.query("SELECT id FROM usuarios WHERE rol = 'admin'");
+    if (check.rows.length > 0) {
+      return res.send('Ya existe un administrador. Esta ruta está desactivada.');
+    }
+    const r = await pool.query("SELECT id, email FROM usuarios ORDER BY id LIMIT 1");
+    if (!r.rows.length) return res.send('No hay usuarios registrados aún. Regístrate primero.');
+    await pool.query("UPDATE usuarios SET rol = 'admin' WHERE id = $1", [r.rows[0].id]);
+    res.send(`✅ Usuario <strong>${r.rows[0].email}</strong> ahora es administrador. <a href="/login">Iniciar sesión</a>`);
+  } catch (err) {
+    res.status(500).send('Error: ' + err.message);
+  }
+});
+
 // ── Rutas generales ──────────────────────────────────────────────────────────
 
 app.get('/', (req, res) => {
