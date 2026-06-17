@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+  <title>Stock — MASTERISADO</title>
+  <script src="/admin/layout.js"></script>
+  <style id="base-css"></style>
+  <style>
+    .tabs { display:flex; gap:4px; margin-bottom:20px; border-bottom:2px solid #e8eaf0; }
+    .tab { padding:10px 18px; cursor:pointer; font-size:13px; font-weight:600; color:#888; border-bottom:3px solid transparent; margin-bottom:-2px; }
+    .tab.active { color:#4A90D9; border-bottom-color:#4A90D9; }
+    .tab-content { display:none; } .tab-content.active { display:block; }
+    .stock-cards { display:grid; grid-template-columns:repeat(auto-fill,minmax(180px,1fr)); gap:12px; margin-bottom:20px; }
+    .stock-card { background:white; border-radius:10px; padding:14px; box-shadow:0 2px 8px rgba(0,0,0,0.07); border-left:4px solid #27AE60; }
+    .stock-card.bajo { border-left-color:#f39c12; }
+    .stock-card.agotado { border-left-color:#e74c3c; }
+    .stock-card-nombre { font-size:12px; font-weight:600; color:#1a1a2e; margin-bottom:4px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .stock-card-qty { font-size:24px; font-weight:700; }
+    .stock-card.bajo .stock-card-qty { color:#f39c12; }
+    .stock-card.agotado .stock-card-qty { color:#e74c3c; }
+    .stock-card:not(.bajo):not(.agotado) .stock-card-qty { color:#27AE60; }
+    .stock-card-sub { font-size:11px; color:#888; }
+  </style>
+</head>
+<body>
+<header>
+  <h1>MASTERISADO</h1>
+  <div class="header-right">
+    <span id="usuario-nombre"></span>
+    <form action="/logout" method="POST" style="margin:0"><button type="submit" class="btn-logout">Salir</button></form>
+  </div>
+</header>
+<nav id="nav-links"></nav>
+
+<main>
+  <h2 style="font-size:16px;color:#1a1a2e;margin-bottom:20px">🏭 Control de Stock</h2>
+
+  <div class="tabs">
+    <div class="tab active" onclick="cambiarTab('resumen')">📊 Resumen</div>
+    <div class="tab" onclick="cambiarTab('movimiento')">➕➖ Movimiento</div>
+    <div class="tab" onclick="cambiarTab('lotes')">🗓 Lotes</div>
+    <div class="tab" onclick="cambiarTab('kardex')">📋 Kardex</div>
+  </div>
+
+  <!-- RESUMEN -->
+  <div class="tab-content active" id="tab-resumen">
+    <div class="stock-cards" id="stock-cards"></div>
+    <div class="card">
+      <div class="top-bar">
+        <div class="card-title" style="margin:0">Inventario detallado</div>
+        <input class="search" id="bus-stock" placeholder="Buscar..." oninput="filtrarStock()"/>
+      </div>
+      <div class="tabla-wrap">
+        <table>
+          <thead><tr><th>SKU</th><th>Producto</th><th>Stock</th><th>Mín.</th><th>Reorden</th><th>Ubicación</th><th>Valorización</th><th>Estado</th></tr></thead>
+          <tbody id="tabla-stock"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- MOVIMIENTO -->
+  <div class="tab-content" id="tab-movimiento">
+    <div class="card" style="max-width:560px">
+      <div class="card-title">Registrar movimiento de stock</div>
+      <div class="form-row">
+        <div class="campo">
+          <label>Tipo</label>
+          <select id="m-tipo" onchange="actualizarBtnMov()">
+            <option value="entrada">⬆ Entrada</option>
+            <option value="salida">⬇ Salida</option>
+            <option value="ajuste">🔄 Ajuste</option>
+          </select>
+        </div>
+        <div class="campo">
+          <label>Producto *</label>
+          <select id="m-producto"><option value="">Seleccionar...</option></select>
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="campo"><label>Cantidad *</label><input type="number" id="m-cantidad" min="1" value="1"/></div>
+        <div class="campo"><label>Lote (opcional)</label><select id="m-lote"><option value="">Sin lote</option></select></div>
+      </div>
+      <div class="campo" style="margin-bottom:16px"><label>Motivo</label><input id="m-motivo" placeholder="Ej: Compra a proveedor, ajuste conteo físico..."/></div>
+      <button class="btn btn-success" id="btn-mov" onclick="registrarMovimiento()">Registrar entrada</button>
+      <div id="msg-mov" style="margin-top:12px;font-size:13px;display:none"></div>
+    </div>
+  </div>
+
+  <!-- LOTES -->
+  <div class="tab-content" id="tab-lotes">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px">
+      <div class="card">
+        <div class="card-title">Agregar nuevo lote</div>
+        <div class="campo" style="margin-bottom:12px"><label>Producto *</label><select id="l-producto"><option value="">Seleccionar...</option></select></div>
+        <div class="form-row">
+          <div class="campo"><label>N° Lote *</label><input id="l-numero" placeholder="LOT-2026-001"/></div>
+          <div class="campo"><label>F. Vencimiento</label><input type="date" id="l-vence"/></div>
+        </div>
+        <div class="campo" style="margin-bottom:16px"><label>Cantidad *</label><input type="number" id="l-cantidad" min="1" value="1"/></div>
+        <button class="btn btn-success" onclick="agregarLote()">Agregar lote</button>
+      </div>
+      <div class="card">
+        <div class="card-title">⚠️ Lotes próximos a vencer (30 días)</div>
+        <div id="lotes-vencer" style="font-size:13px;color:#666">Cargando...</div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title">Todos los lotes activos</div>
+      <div class="tabla-wrap">
+        <table>
+          <thead><tr><th>Producto</th><th>N° Lote</th><th>Vencimiento</th><th>Días rest.</th><th>Cant. inicial</th><th>Cant. actual</th></tr></thead>
+          <tbody id="tabla-lotes"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- KARDEX -->
+  <div class="tab-content" id="tab-kardex">
+    <div class="card">
+      <div class="top-bar">
+        <div class="card-title" style="margin:0">Historial de movimientos (Kardex)</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <input type="date" id="k-desde" style="padding:7px 10px;border:1.5px solid #d0d5dd;border-radius:7px;font-size:12px"/>
+          <input type="date" id="k-hasta" style="padding:7px 10px;border:1.5px solid #d0d5dd;border-radius:7px;font-size:12px"/>
+          <button class="btn btn-primary btn-sm" onclick="cargarKardex()">Filtrar</button>
+        </div>
+      </div>
+      <div class="tabla-wrap">
+        <table>
+          <thead><tr><th>Fecha</th><th>Producto</th><th>SKU</th><th>Tipo</th><th>Cantidad</th><th>Antes</th><th>Después</th><th>Lote</th><th>Motivo</th><th>Usuario</th></tr></thead>
+          <tbody id="tabla-kardex"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</main>
+
+<script>
+document.getElementById('base-css').textContent = CSS_BASE;
+let stockData = [], lotesData = [];
+
+function cambiarTab(id) {
+  document.querySelectorAll('.tab,.tab-content').forEach(el => el.classList.remove('active'));
+  document.querySelector(`.tab[onclick="cambiarTab('${id}')"]`).classList.add('active');
+  document.getElementById(`tab-${id}`).classList.add('active');
+  if (id === 'kardex') cargarKardex();
+  if (id === 'lotes') cargarLotes();
+}
+
+async function init() {
+  const sesion = await cargarSesion();
+  if (!sesion) return;
+  renderNav('/admin/stock', sesion);
+  await cargarStock();
+  await cargarSelectProductos();
+}
+
+async function cargarStock() {
+  const r = await fetch('/api/stock');
+  stockData = await r.json();
+  renderStockCards(stockData);
+  renderTablaStock(stockData);
+}
+
+function renderStockCards(lista) {
+  const agotados = lista.filter(p => p.estado_stock === 'agotado').length;
+  const bajos = lista.filter(p => p.estado_stock === 'bajo').length;
+  const total = lista.length;
+  const valorizacion = lista.reduce((s,p) => s + parseFloat(p.valorizacion||0), 0);
+  document.getElementById('stock-cards').innerHTML = `
+    <div class="stock-card"><div class="stock-card-nombre">Total productos</div><div class="stock-card-qty" style="color:#4A90D9">${total}</div><div class="stock-card-sub">Valorización: ${fmtMoneda(valorizacion)}</div></div>
+    <div class="stock-card ${bajos>0?'bajo':''}"><div class="stock-card-nombre">Stock bajo</div><div class="stock-card-qty">${bajos}</div><div class="stock-card-sub">En o bajo el mínimo</div></div>
+    <div class="stock-card ${agotados>0?'agotado':''}"><div class="stock-card-nombre">Agotados</div><div class="stock-card-qty">${agotados}</div><div class="stock-card-sub">Stock = 0</div></div>
+  `;
+}
+
+function renderTablaStock(lista) {
+  const tbody = document.getElementById('tabla-stock');
+  if (!lista.length) { tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:#aaa;padding:24px">Sin productos</td></tr>'; return; }
+  tbody.innerHTML = lista.map(p => `<tr>
+    <td><code style="font-size:11px;color:#4A90D9">${p.sku}</code></td>
+    <td>${p.nombre}</td>
+    <td><strong style="color:${p.estado_stock==='agotado'?'#e74c3c':p.estado_stock==='bajo'?'#f39c12':'#27AE60'}">${p.stock_actual}</strong></td>
+    <td>${p.stock_minimo}</td>
+    <td>${p.punto_reorden}</td>
+    <td style="color:#888;font-size:12px">${p.ubicacion||'—'}</td>
+    <td>${fmtMoneda(p.valorizacion)}</td>
+    <td>${badge(p.estado_stock==='agotado'?'Agotado':p.estado_stock==='bajo'?'Stock bajo':'OK', p.estado_stock==='agotado'?'rojo':p.estado_stock==='bajo'?'naranja':'verde')}</td>
+  </tr>`).join('');
+}
+
+function filtrarStock() {
+  const q = document.getElementById('bus-stock').value.toLowerCase();
+  renderTablaStock(stockData.filter(p => p.nombre.toLowerCase().includes(q) || p.sku.toLowerCase().includes(q)));
+}
+
+async function cargarSelectProductos() {
+  const r = await fetch('/api/productos');
+  const prods = await r.json();
+  ['m-producto','l-producto'].forEach(selId => {
+    const sel = document.getElementById(selId);
+    if (!sel) return;
+    sel.innerHTML = '<option value="">Seleccionar...</option>' + prods.map(p => `<option value="${p.id}">${p.nombre} (stock: ${p.stock_actual})</option>`).join('');
+  });
+  document.getElementById('m-producto').addEventListener('change', cargarLotesProducto);
+}
+
+async function cargarLotesProducto() {
+  const pid = document.getElementById('m-producto').value;
+  const sel = document.getElementById('m-lote');
+  sel.innerHTML = '<option value="">Sin lote</option>';
+  if (!pid) return;
+  const r = await fetch(`/api/lotes?producto_id=${pid}`);
+  const lotes = await r.json();
+  lotes.forEach(l => sel.innerHTML += `<option value="${l.id}">Lote ${l.numero_lote} — Vence: ${fmtFecha(l.fecha_vencimiento)} (${l.cantidad_actual} uds)</option>`);
+}
+
+function actualizarBtnMov() {
+  const tipo = document.getElementById('m-tipo').value;
+  const btn = document.getElementById('btn-mov');
+  btn.textContent = tipo === 'entrada' ? 'Registrar entrada' : tipo === 'salida' ? 'Registrar salida' : 'Registrar ajuste';
+  btn.className = `btn btn-sm ${tipo==='entrada'?'btn-success':tipo==='salida'?'btn-danger':'btn-warning'}`;
+  btn.style.padding = '9px 18px'; btn.style.fontSize = '13px';
+}
+
+async function registrarMovimiento() {
+  const body = {
+    producto_id: document.getElementById('m-producto').value,
+    lote_id: document.getElementById('m-lote').value || null,
+    tipo: document.getElementById('m-tipo').value,
+    cantidad: document.getElementById('m-cantidad').value,
+    motivo: document.getElementById('m-motivo').value,
+  };
+  if (!body.producto_id || !body.cantidad) return toast('Completa los campos requeridos','err');
+  const r = await fetch('/api/stock/movimiento', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body) });
+  const data = await r.json();
+  if (data.exito) { toast(`Movimiento registrado. Stock: ${data.nuevo_stock}`); cargarStock(); }
+  else toast(data.mensaje,'err');
+}
+
+async function cargarLotes() {
+  const [todos, vencer] = await Promise.all([
+    fetch('/api/lotes').then(r=>r.json()),
+    fetch('/api/reportes/vencimientos?dias=30').then(r=>r.json()),
+  ]);
+  lotesData = todos;
+  renderTablaLotes(todos);
+
+  const elVencer = document.getElementById('lotes-vencer');
+  if (!vencer.length) { elVencer.innerHTML = '<p style="color:#27AE60">✅ Sin lotes próximos a vencer</p>'; return; }
+  elVencer.innerHTML = `<table style="width:100%;font-size:12px">
+    <thead><tr><th style="padding:6px;color:#888">Producto</th><th style="padding:6px;color:#888">Lote</th><th style="padding:6px;color:#888">Vence</th><th style="padding:6px;color:#888">Días</th><th style="padding:6px;color:#888">Cant.</th></tr></thead>
+    <tbody>${vencer.map(l=>`<tr>
+      <td style="padding:6px">${l.producto}</td>
+      <td style="padding:6px;font-size:11px">${l.numero_lote}</td>
+      <td style="padding:6px">${fmtFecha(l.fecha_vencimiento)}</td>
+      <td style="padding:6px;font-weight:700;color:${l.dias_restantes<=0?'#e74c3c':'#f39c12'}">${l.dias_restantes<=0?'VENCIDO':l.dias_restantes+' días'}</td>
+      <td style="padding:6px">${l.cantidad_actual}</td>
+    </tr>`).join('')}</tbody>
+  </table>`;
+}
+
+function renderTablaLotes(lista) {
+  const tbody = document.getElementById('tabla-lotes');
+  if (!lista.length) { tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#aaa;padding:24px">Sin lotes</td></tr>'; return; }
+  tbody.innerHTML = lista.map(l => {
+    const dias = l.fecha_vencimiento ? Math.floor((new Date(l.fecha_vencimiento)-new Date())/(1000*60*60*24)) : null;
+    return `<tr>
+      <td>${l.producto}</td>
+      <td><code style="font-size:11px">${l.numero_lote}</code></td>
+      <td>${fmtFecha(l.fecha_vencimiento)}</td>
+      <td style="font-weight:700;color:${dias===null?'#888':dias<=0?'#e74c3c':dias<=30?'#f39c12':'#27AE60'}">${dias===null?'—':dias<=0?'VENCIDO':dias+' días'}</td>
+      <td>${l.cantidad_inicial}</td>
+      <td><strong>${l.cantidad_actual}</strong></td>
+    </tr>`;
+  }).join('');
+}
+
+async function agregarLote() {
+  const body = {
+    producto_id: document.getElementById('l-producto').value,
+    numero_lote: document.getElementById('l-numero').value,
+    fecha_vencimiento: document.getElementById('l-vence').value || null,
+    cantidad: document.getElementById('l-cantidad').value,
+  };
+  if (!body.producto_id || !body.numero_lote || !body.cantidad) return toast('Completa los campos requeridos','err');
+  const r = await fetch('/api/lotes', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body) });
+  const data = await r.json();
+  if (data.exito) { toast('Lote agregado'); cargarLotes(); cargarStock(); }
+  else toast(data.mensaje,'err');
+}
+
+async function cargarKardex() {
+  const desde = document.getElementById('k-desde').value;
+  const hasta = document.getElementById('k-hasta').value;
+  let url = '/api/stock/kardex?limit=200';
+  if (desde) url += `&desde=${desde}`;
+  if (hasta) url += `&hasta=${hasta}`;
+  const r = await fetch(url);
+  const data = await r.json();
+  const tbody = document.getElementById('tabla-kardex');
+  if (!data.length) { tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;color:#aaa;padding:24px">Sin movimientos</td></tr>'; return; }
+  tbody.innerHTML = data.map(m => {
+    const esPositivo = ['entrada','compra','devolucion','ajuste'].includes(m.tipo) && m.cantidad > 0;
+    return `<tr>
+      <td style="font-size:11px;color:#888;white-space:nowrap">${fmtFechaHora(m.creado_en)}</td>
+      <td>${m.producto}</td>
+      <td><code style="font-size:11px;color:#4A90D9">${m.sku}</code></td>
+      <td>${badge(m.tipo, m.tipo==='entrada'||m.tipo==='compra'||m.tipo==='devolucion'?'verde':m.tipo==='venta'?'azul':m.tipo==='salida'?'rojo':'naranja')}</td>
+      <td style="font-weight:700;color:${esPositivo?'#27AE60':'#e74c3c'}">${esPositivo?'+':'−'}${Math.abs(m.cantidad)}</td>
+      <td>${m.cantidad_antes}</td>
+      <td><strong>${m.cantidad_despues}</strong></td>
+      <td style="font-size:11px">${m.numero_lote||'—'}</td>
+      <td style="color:#888;font-size:12px">${m.motivo||'—'}</td>
+      <td style="font-size:12px">${m.usuario||'—'}</td>
+    </tr>`;
+  }).join('');
+}
+
+init();
+</script>
+</body>
+</html>

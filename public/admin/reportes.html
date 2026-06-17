@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+  <title>Reportes — MASTERISADO</title>
+  <script src="/admin/layout.js"></script>
+  <style id="base-css"></style>
+  <style>
+    .tabs { display:flex; gap:4px; margin-bottom:20px; border-bottom:2px solid #e8eaf0; flex-wrap:wrap; }
+    .tab { padding:10px 16px; cursor:pointer; font-size:12px; font-weight:600; color:#888; border-bottom:3px solid transparent; margin-bottom:-2px; }
+    .tab.active { color:#4A90D9; border-bottom-color:#4A90D9; }
+    .tab-content { display:none; } .tab-content.active { display:block; }
+    .filtros { display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:16px; }
+    .reporte-stat { display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:12px; margin-bottom:18px; }
+    .stat-card { background:#f5f6fa; border-radius:8px; padding:14px; text-align:center; }
+    .stat-label { font-size:11px; color:#888; }
+    .stat-valor { font-size:20px; font-weight:700; color:#1a1a2e; margin-top:4px; }
+    .rank-num { display:inline-block; width:22px; height:22px; border-radius:50%; background:#4A90D9; color:white; font-size:11px; font-weight:700; text-align:center; line-height:22px; }
+  </style>
+</head>
+<body>
+<header>
+  <h1>MASTERISADO</h1>
+  <div class="header-right">
+    <span id="usuario-nombre"></span>
+    <form action="/logout" method="POST" style="margin:0"><button type="submit" class="btn-logout">Salir</button></form>
+  </div>
+</header>
+<nav id="nav-links"></nav>
+
+<main>
+  <h2 style="font-size:16px;color:#1a1a2e;margin-bottom:20px">📈 Reportes</h2>
+
+  <div class="tabs">
+    <div class="tab active" onclick="cambiarTab('valoracion')">💵 Valorización</div>
+    <div class="tab" onclick="cambiarTab('bajo-stock')">⚠️ Stock bajo</div>
+    <div class="tab" onclick="cambiarTab('vencimientos')">🗓 Vencimientos</div>
+    <div class="tab" onclick="cambiarTab('movimientos')">📋 Movimientos</div>
+    <div class="tab" onclick="cambiarTab('ranking')">🏆 Ranking ventas</div>
+  </div>
+
+  <!-- VALORIZACIÓN -->
+  <div class="tab-content active" id="tab-valoracion">
+    <div class="reporte-stat" id="val-stats"></div>
+    <div class="card">
+      <div class="top-bar">
+        <div class="card-title" style="margin:0">Valorización de inventario</div>
+        <button class="btn btn-primary btn-sm" onclick="cargarValoracion()">🔄 Actualizar</button>
+      </div>
+      <div class="tabla-wrap">
+        <table>
+          <thead><tr><th>SKU</th><th>Producto</th><th>Categoría</th><th>Stock</th><th>P. Compra</th><th>P. Venta</th><th>Valor costo</th><th>Valor venta</th><th>Utilidad pot.</th></tr></thead>
+          <tbody id="tabla-val"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- STOCK BAJO -->
+  <div class="tab-content" id="tab-bajo-stock">
+    <div class="card">
+      <div class="top-bar">
+        <div class="card-title" style="margin:0">Productos con stock bajo o agotado</div>
+        <button class="btn btn-primary btn-sm" onclick="cargarBajoStock()">🔄 Actualizar</button>
+      </div>
+      <div class="tabla-wrap">
+        <table>
+          <thead><tr><th>SKU</th><th>Producto</th><th>Stock actual</th><th>Stock mín.</th><th>Punto reorden</th><th>Déficit</th><th>Estado</th></tr></thead>
+          <tbody id="tabla-bajo-stock"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- VENCIMIENTOS -->
+  <div class="tab-content" id="tab-vencimientos">
+    <div class="filtros">
+      <label style="font-size:12px;color:#666">Mostrar lotes que vencen en los próximos:</label>
+      <select id="dias-vencer" style="padding:7px 10px;border:1.5px solid #d0d5dd;border-radius:7px;font-size:12px">
+        <option value="7">7 días</option>
+        <option value="15">15 días</option>
+        <option value="30" selected>30 días</option>
+        <option value="60">60 días</option>
+        <option value="90">90 días</option>
+      </select>
+      <button class="btn btn-primary btn-sm" onclick="cargarVencimientos()">Filtrar</button>
+    </div>
+    <div class="card">
+      <div class="card-title">Lotes próximos a vencer / vencidos</div>
+      <div class="tabla-wrap">
+        <table>
+          <thead><tr><th>Producto</th><th>SKU</th><th>N° Lote</th><th>Fecha vence</th><th>Días rest.</th><th>Cantidad</th><th>Valor</th></tr></thead>
+          <tbody id="tabla-venc"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- MOVIMIENTOS -->
+  <div class="tab-content" id="tab-movimientos">
+    <div class="filtros">
+      <input type="date" id="m-desde" style="padding:7px 10px;border:1.5px solid #d0d5dd;border-radius:7px;font-size:12px"/>
+      <input type="date" id="m-hasta" style="padding:7px 10px;border:1.5px solid #d0d5dd;border-radius:7px;font-size:12px"/>
+      <select id="m-tipo" style="padding:7px 10px;border:1.5px solid #d0d5dd;border-radius:7px;font-size:12px">
+        <option value="">Todos los tipos</option>
+        <option value="entrada">Entrada</option>
+        <option value="salida">Salida</option>
+        <option value="venta">Venta</option>
+        <option value="compra">Compra</option>
+        <option value="ajuste">Ajuste</option>
+        <option value="devolucion">Devolución</option>
+      </select>
+      <button class="btn btn-primary btn-sm" onclick="cargarMovimientos()">Filtrar</button>
+    </div>
+    <div class="reporte-stat" id="mov-stats"></div>
+    <div class="card">
+      <div class="tabla-wrap">
+        <table>
+          <thead><tr><th>Fecha</th><th>Producto</th><th>SKU</th><th>Tipo</th><th>Cantidad</th><th>Antes</th><th>Después</th><th>Motivo</th><th>Usuario</th></tr></thead>
+          <tbody id="tabla-mov"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- RANKING -->
+  <div class="tab-content" id="tab-ranking">
+    <div class="filtros">
+      <input type="date" id="r-desde" style="padding:7px 10px;border:1.5px solid #d0d5dd;border-radius:7px;font-size:12px"/>
+      <input type="date" id="r-hasta" style="padding:7px 10px;border:1.5px solid #d0d5dd;border-radius:7px;font-size:12px"/>
+      <button class="btn btn-primary btn-sm" onclick="cargarRanking()">Filtrar</button>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px">
+      <div class="card">
+        <div class="card-title">🥇 Más vendidos (por cantidad)</div>
+        <div id="rank-cantidad"></div>
+      </div>
+      <div class="card">
+        <div class="card-title">💵 Más vendidos (por ingresos)</div>
+        <div id="rank-ingresos"></div>
+      </div>
+    </div>
+  </div>
+</main>
+
+<script>
+document.getElementById('base-css').textContent = CSS_BASE;
+
+function cambiarTab(id) {
+  document.querySelectorAll('.tab,.tab-content').forEach(el => el.classList.remove('active'));
+  document.querySelector(`.tab[onclick="cambiarTab('${id}')"]`).classList.add('active');
+  document.getElementById(`tab-${id}`).classList.add('active');
+  const fnMap = { valoracion:cargarValoracion, 'bajo-stock':cargarBajoStock, vencimientos:cargarVencimientos, movimientos:cargarMovimientos, ranking:cargarRanking };
+  if (fnMap[id]) fnMap[id]();
+}
+
+async function init() {
+  const sesion = await cargarSesion();
+  if (!sesion) return;
+  renderNav('/admin/reportes', sesion);
+  cargarValoracion();
+}
+
+async function cargarValoracion() {
+  const data = await fetch('/api/reportes/valoracion').then(r=>r.json());
+  const totalCosto = data.reduce((s,p)=>s+parseFloat(p.valor_costo||0),0);
+  const totalVenta = data.reduce((s,p)=>s+parseFloat(p.valor_venta||0),0);
+  const utilidad = totalVenta - totalCosto;
+  document.getElementById('val-stats').innerHTML = `
+    <div class="stat-card"><div class="stat-label">Valor a costo</div><div class="stat-valor" style="font-size:15px">${fmtMoneda(totalCosto)}</div></div>
+    <div class="stat-card"><div class="stat-label">Valor a precio de venta</div><div class="stat-valor" style="font-size:15px">${fmtMoneda(totalVenta)}</div></div>
+    <div class="stat-card"><div class="stat-label">Utilidad potencial</div><div class="stat-valor" style="font-size:15px;color:#27AE60">${fmtMoneda(utilidad)}</div></div>
+    <div class="stat-card"><div class="stat-label">Productos en inventario</div><div class="stat-valor">${data.length}</div></div>
+  `;
+  const tbody = document.getElementById('tabla-val');
+  if (!data.length) { tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:#aaa;padding:30px">Sin datos</td></tr>'; return; }
+  tbody.innerHTML = data.map(p => `<tr>
+    <td><code style="font-size:11px;color:#4A90D9">${p.sku}</code></td>
+    <td>${p.nombre}</td>
+    <td>${p.categoria||'—'}</td>
+    <td><strong>${p.stock_actual}</strong></td>
+    <td>${fmtMoneda(p.precio_compra)}</td>
+    <td>${fmtMoneda(p.precio_venta)}</td>
+    <td>${fmtMoneda(p.valor_costo)}</td>
+    <td>${fmtMoneda(p.valor_venta)}</td>
+    <td style="color:#27AE60;font-weight:700">${fmtMoneda(parseFloat(p.valor_venta)-parseFloat(p.valor_costo))}</td>
+  </tr>`).join('');
+}
+
+async function cargarBajoStock() {
+  const data = await fetch('/api/reportes/bajo-stock').then(r=>r.json());
+  const tbody = document.getElementById('tabla-bajo-stock');
+  if (!data.length) { tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:#27AE60;padding:24px;font-weight:600">✅ Todos los productos tienen stock suficiente</td></tr>'; return; }
+  tbody.innerHTML = data.map(p => `<tr>
+    <td><code style="font-size:11px;color:#4A90D9">${p.sku}</code></td>
+    <td>${p.nombre}</td>
+    <td><strong style="color:${p.stock_actual===0?'#e74c3c':'#f39c12'}">${p.stock_actual}</strong></td>
+    <td>${p.stock_minimo}</td>
+    <td>${p.punto_reorden}</td>
+    <td style="color:#e74c3c;font-weight:700">${Math.max(0, p.stock_minimo - p.stock_actual)}</td>
+    <td>${badge(p.stock_actual===0?'Agotado':'Stock bajo', p.stock_actual===0?'rojo':'naranja')}</td>
+  </tr>`).join('');
+}
+
+async function cargarVencimientos() {
+  const dias = document.getElementById('dias-vencer').value;
+  const data = await fetch(`/api/reportes/vencimientos?dias=${dias}`).then(r=>r.json());
+  const tbody = document.getElementById('tabla-venc');
+  if (!data.length) { tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;color:#27AE60;padding:24px;font-weight:600">✅ Sin lotes que vencen en los próximos ${dias} días</td></tr>`; return; }
+  tbody.innerHTML = data.map(l => {
+    const dias_r = l.dias_restantes;
+    return `<tr>
+      <td>${l.producto}</td>
+      <td><code style="font-size:11px;color:#4A90D9">${l.sku}</code></td>
+      <td><code style="font-size:11px">${l.numero_lote}</code></td>
+      <td>${fmtFecha(l.fecha_vencimiento)}</td>
+      <td style="font-weight:700;color:${dias_r<=0?'#e74c3c':dias_r<=7?'#e74c3c':'#f39c12'}">${dias_r<=0?'VENCIDO':dias_r+' días'}</td>
+      <td>${l.cantidad_actual}</td>
+      <td>${fmtMoneda(parseFloat(l.cantidad_actual)*parseFloat(l.precio_compra||0))}</td>
+    </tr>`;
+  }).join('');
+}
+
+async function cargarMovimientos() {
+  const desde = document.getElementById('m-desde').value;
+  const hasta = document.getElementById('m-hasta').value;
+  const tipo = document.getElementById('m-tipo').value;
+  let url = '/api/stock/kardex?limit=500';
+  if (desde) url += `&desde=${desde}`;
+  if (hasta) url += `&hasta=${hasta}`;
+  if (tipo) url += `&tipo=${tipo}`;
+  const data = await fetch(url).then(r=>r.json());
+
+  const entradas = data.filter(m=>['entrada','compra','devolucion'].includes(m.tipo));
+  const salidas = data.filter(m=>['salida','venta'].includes(m.tipo));
+  document.getElementById('mov-stats').innerHTML = `
+    <div class="stat-card"><div class="stat-label">Total movimientos</div><div class="stat-valor">${data.length}</div></div>
+    <div class="stat-card"><div class="stat-label">Entradas</div><div class="stat-valor" style="color:#27AE60">${entradas.length}</div></div>
+    <div class="stat-card"><div class="stat-label">Salidas</div><div class="stat-valor" style="color:#e74c3c">${salidas.length}</div></div>
+  `;
+  const tbody = document.getElementById('tabla-mov');
+  if (!data.length) { tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:#aaa;padding:30px">Sin movimientos</td></tr>'; return; }
+  const colores = { entrada:'verde', salida:'rojo', venta:'azul', compra:'verde', ajuste:'naranja', devolucion:'azul' };
+  tbody.innerHTML = data.map(m => `<tr>
+    <td style="font-size:11px;color:#888;white-space:nowrap">${fmtFechaHora(m.creado_en)}</td>
+    <td>${m.producto}</td>
+    <td><code style="font-size:11px;color:#4A90D9">${m.sku}</code></td>
+    <td>${badge(m.tipo, colores[m.tipo]||'gris')}</td>
+    <td style="font-weight:700;color:${['entrada','compra','devolucion'].includes(m.tipo)?'#27AE60':'#e74c3c'}">${['entrada','compra','devolucion'].includes(m.tipo)?'+':'−'}${Math.abs(m.cantidad)}</td>
+    <td>${m.cantidad_antes}</td>
+    <td><strong>${m.cantidad_despues}</strong></td>
+    <td style="font-size:12px;color:#888">${m.motivo||'—'}</td>
+    <td style="font-size:12px">${m.usuario||'—'}</td>
+  </tr>`).join('');
+}
+
+async function cargarRanking() {
+  const desde = document.getElementById('r-desde').value;
+  const hasta = document.getElementById('r-hasta').value;
+  let url = '/api/reportes/ranking';
+  const params = [];
+  if (desde) params.push(`desde=${desde}`);
+  if (hasta) params.push(`hasta=${hasta}`);
+  if (params.length) url += '?' + params.join('&');
+  const data = await fetch(url).then(r=>r.json());
+
+  const renderRank = (lista, campo, label) => {
+    if (!lista.length) return '<p style="color:#aaa;font-size:13px">Sin datos</p>';
+    return `<table style="width:100%;font-size:13px"><thead><tr><th style="padding:8px;background:#f5f6fa">#</th><th style="padding:8px;background:#f5f6fa">Producto</th><th style="padding:8px;background:#f5f6fa">${label}</th></tr></thead>
+      <tbody>${lista.slice(0,10).map((p,i)=>`<tr>
+        <td style="padding:8px"><span class="rank-num">${i+1}</span></td>
+        <td style="padding:8px">${p.producto}</td>
+        <td style="padding:8px;font-weight:700;color:#4A90D9">${campo==='total_cantidad'?p.total_cantidad+' uds':fmtMoneda(p.total_ingresos)}</td>
+      </tr>`).join('')}</tbody>
+    </table>`;
+  };
+  document.getElementById('rank-cantidad').innerHTML = renderRank(data, 'total_cantidad', 'Cantidad');
+  document.getElementById('rank-ingresos').innerHTML = renderRank(data, 'total_ingresos', 'Ingresos');
+}
+
+init();
+</script>
+</body>
+</html>

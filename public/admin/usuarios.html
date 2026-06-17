@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+  <title>Usuarios — MASTERISADO</title>
+  <script src="/admin/layout.js"></script>
+  <style id="base-css"></style>
+  <style>
+    .tabs { display:flex; gap:4px; margin-bottom:20px; border-bottom:2px solid #e8eaf0; }
+    .tab { padding:10px 18px; cursor:pointer; font-size:13px; font-weight:600; color:#888; border-bottom:3px solid transparent; margin-bottom:-2px; }
+    .tab.active { color:#4A90D9; border-bottom-color:#4A90D9; }
+    .tab-content { display:none; } .tab-content.active { display:block; }
+    .perm-grid { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin:12px 0; }
+    .perm-item { display:flex; align-items:center; gap:8px; padding:8px 12px; background:#f8f9fb; border-radius:8px; }
+    .perm-item label { font-size:13px; color:#444; cursor:pointer; flex:1; }
+    .perm-item input { width:16px; height:16px; cursor:pointer; }
+    .perm-super { grid-column:1/-1; background:#fff3cd; border:1px solid #f39c12; }
+  </style>
+</head>
+<body>
+<header>
+  <h1>MASTERISADO</h1>
+  <div class="header-right">
+    <span id="usuario-nombre"></span>
+    <form action="/logout" method="POST" style="margin:0"><button type="submit" class="btn-logout">Salir</button></form>
+  </div>
+</header>
+<nav id="nav-links"></nav>
+
+<main>
+  <h2 style="font-size:16px;color:#1a1a2e;margin-bottom:20px">👥 Usuarios y Roles</h2>
+
+  <div class="tabs">
+    <div class="tab active" onclick="cambiarTab('usuarios')">👤 Usuarios</div>
+    <div class="tab" onclick="cambiarTab('roles')">🔑 Roles</div>
+  </div>
+
+  <!-- USUARIOS -->
+  <div class="tab-content active" id="tab-usuarios">
+    <div class="card">
+      <div class="top-bar">
+        <div class="card-title" style="margin:0">Lista de usuarios</div>
+        <input class="search" id="bus-usuarios" placeholder="Buscar..." oninput="filtrarUsuarios()"/>
+      </div>
+      <div class="tabla-wrap">
+        <table>
+          <thead><tr><th>Nombre</th><th>Email</th><th>Rol</th><th>Registro</th><th>Acciones</th></tr></thead>
+          <tbody id="tabla-usuarios"><tr><td colspan="5" style="text-align:center;color:#aaa;padding:30px">Cargando...</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- ROLES -->
+  <div class="tab-content" id="tab-roles">
+    <div style="display:grid;grid-template-columns:1fr 1.6fr;gap:20px">
+      <div class="card">
+        <div class="top-bar">
+          <div class="card-title" style="margin:0">Roles del sistema</div>
+          <button class="btn btn-success btn-sm" onclick="abrirNuevoRol()">+ Nuevo rol</button>
+        </div>
+        <div id="lista-roles" style="display:flex;flex-direction:column;gap:8px"></div>
+      </div>
+      <div class="card" id="panel-rol" style="display:none">
+        <div class="card-title" id="panel-rol-titulo">Editar rol</div>
+        <div class="campo" style="margin-bottom:12px">
+          <label>Nombre del rol</label>
+          <input id="rol-nombre" placeholder="Ej: Bodeguero"/>
+        </div>
+        <div style="font-size:12px;font-weight:600;color:#666;margin-bottom:8px">PERMISOS</div>
+        <div class="perm-grid" id="perm-grid"></div>
+        <div style="margin-top:16px;display:flex;gap:10px">
+          <button class="btn btn-success" onclick="guardarRol()">Guardar cambios</button>
+          <button class="btn" style="background:#eee;color:#555" onclick="cerrarPanelRol()">Cancelar</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</main>
+
+<!-- Modal cambiar rol de usuario -->
+<div class="modal-overlay" id="modal-rol-usuario">
+  <div class="modal" style="max-width:420px">
+    <div class="modal-title">Cambiar rol de usuario</div>
+    <input type="hidden" id="u-id"/>
+    <p id="u-nombre-label" style="font-size:13px;color:#555;margin-bottom:16px"></p>
+    <div class="campo" style="margin-bottom:20px">
+      <label>Nuevo rol</label>
+      <select id="u-rol-sel"></select>
+    </div>
+    <div class="modal-footer">
+      <button class="btn" style="background:#eee;color:#555" onclick="cerrarModalRolUser()">Cancelar</button>
+      <button class="btn btn-success" onclick="cambiarRolUsuario()">Asignar rol</button>
+    </div>
+  </div>
+</div>
+
+<script>
+document.getElementById('base-css').textContent = CSS_BASE;
+let usuarios = [], roles = [], sesionActual = null;
+let rolEditando = null;
+
+const PERMISOS_DISPONIBLES = [
+  { key:'productos', label:'📦 Productos' },
+  { key:'stock', label:'🏭 Stock' },
+  { key:'compras', label:'🛒 Compras' },
+  { key:'ventas', label:'💰 Ventas' },
+  { key:'reportes', label:'📈 Reportes' },
+  { key:'usuarios', label:'👥 Usuarios' },
+  { key:'roles', label:'🔑 Roles' },
+  { key:'asignar_admin', label:'⭐ Asignar admin', especial:true },
+];
+
+function cambiarTab(id) {
+  document.querySelectorAll('.tab,.tab-content').forEach(el => el.classList.remove('active'));
+  document.querySelector(`.tab[onclick="cambiarTab('${id}')"]`).classList.add('active');
+  document.getElementById(`tab-${id}`).classList.add('active');
+  if (id === 'roles') cargarRoles();
+}
+
+async function init() {
+  sesionActual = await cargarSesion();
+  if (!sesionActual) return;
+  renderNav('/admin/usuarios', sesionActual);
+  await cargarUsuarios();
+}
+
+async function cargarUsuarios() {
+  roles = await fetch('/api/roles').then(r=>r.json());
+  const data = await fetch('/api/usuarios').then(r=>r.json());
+  usuarios = data;
+  renderTablaUsuarios(usuarios);
+}
+
+function renderTablaUsuarios(lista) {
+  const tbody = document.getElementById('tabla-usuarios');
+  if (!lista.length) { tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:#aaa;padding:30px">Sin usuarios</td></tr>'; return; }
+  tbody.innerHTML = lista.map(u => {
+    const esSuperusuario = u.rol === 'superusuario';
+    const puedeEditar = sesionActual?.permisos?.usuarios && !esSuperusuario;
+    const colorRol = u.rol==='superusuario'?'azul':u.rol==='administrador'?'verde':'gris';
+    return `<tr>
+      <td><strong>${u.nombre}</strong></td>
+      <td style="font-size:12px;color:#888">${u.email}</td>
+      <td>${badge(u.rol||'—', colorRol)}</td>
+      <td style="font-size:12px;color:#888">${fmtFecha(u.creado_en)}</td>
+      <td>
+        ${puedeEditar
+          ? `<button class="btn btn-warning btn-sm" onclick='abrirModalRolUser(${JSON.stringify(u)})'>Cambiar rol</button>`
+          : `<span style="font-size:11px;color:#aaa">${esSuperusuario?'No modificable':'—'}</span>`}
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+function filtrarUsuarios() {
+  const q = document.getElementById('bus-usuarios').value.toLowerCase();
+  renderTablaUsuarios(usuarios.filter(u => u.nombre.toLowerCase().includes(q) || u.email.toLowerCase().includes(q)));
+}
+
+function abrirModalRolUser(u) {
+  document.getElementById('u-id').value = u.id;
+  document.getElementById('u-nombre-label').textContent = `Usuario: ${u.nombre} (${u.email})`;
+  const sel = document.getElementById('u-rol-sel');
+  const puedeAsignarAdmin = sesionActual?.permisos?.asignar_admin;
+  sel.innerHTML = roles
+    .filter(r => {
+      if (r.nombre === 'superusuario') return false;
+      if (r.nombre === 'administrador' && !puedeAsignarAdmin) return false;
+      return true;
+    })
+    .map(r => `<option value="${r.id}" ${r.nombre===u.rol?'selected':''}>${r.nombre}</option>`)
+    .join('');
+  document.getElementById('modal-rol-usuario').classList.add('open');
+}
+function cerrarModalRolUser() { document.getElementById('modal-rol-usuario').classList.remove('open'); }
+
+async function cambiarRolUsuario() {
+  const id = document.getElementById('u-id').value;
+  const rol_id = document.getElementById('u-rol-sel').value;
+  const r = await fetch(`/api/usuarios/${id}/rol`, { method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ rol_id }) });
+  const data = await r.json();
+  if (data.exito) { cerrarModalRolUser(); toast('Rol actualizado'); cargarUsuarios(); }
+  else toast(data.mensaje||'Error','err');
+}
+
+async function cargarRoles() {
+  roles = await fetch('/api/roles').then(r=>r.json());
+  const lista = document.getElementById('lista-roles');
+  lista.innerHTML = roles.map(r => `
+    <div onclick="seleccionarRol(${r.id})" style="padding:12px 14px;border-radius:8px;cursor:pointer;border:2px solid #e8eaf0;background:${r.es_sistema?'#f8f9fb':'white'};display:flex;align-items:center;justify-content:space-between">
+      <div>
+        <div style="font-size:13px;font-weight:700;color:#1a1a2e">${r.nombre}</div>
+        <div style="font-size:11px;color:#888;margin-top:2px">${r.es_sistema?'Rol del sistema':'Rol personalizado'}</div>
+      </div>
+      ${r.es_sistema?badge('Sistema','azul'):badge('Personalizado','gris')}
+    </div>
+  `).join('');
+}
+
+function seleccionarRol(id) {
+  const rol = roles.find(r => r.id === id);
+  if (!rol) return;
+  rolEditando = rol;
+  document.getElementById('rol-nombre').value = rol.nombre;
+  document.getElementById('rol-nombre').disabled = rol.es_sistema;
+  renderPermisos(rol.permisos || {}, rol.es_sistema && rol.nombre === 'superusuario');
+  document.getElementById('panel-rol-titulo').textContent = `Editar: ${rol.nombre}`;
+  document.getElementById('panel-rol').style.display = 'block';
+}
+
+function abrirNuevoRol() {
+  rolEditando = null;
+  document.getElementById('rol-nombre').value = '';
+  document.getElementById('rol-nombre').disabled = false;
+  document.getElementById('panel-rol-titulo').textContent = 'Nuevo rol';
+  renderPermisos({}, false);
+  document.getElementById('panel-rol').style.display = 'block';
+}
+
+function cerrarPanelRol() { document.getElementById('panel-rol').style.display = 'none'; rolEditando = null; }
+
+function renderPermisos(permisos, soloLectura) {
+  document.getElementById('perm-grid').innerHTML = PERMISOS_DISPONIBLES.map(p => `
+    <div class="perm-item ${p.especial?'perm-super':''}">
+      <input type="checkbox" id="perm-${p.key}" ${permisos[p.key]?'checked':''} ${soloLectura?'disabled':''}/>
+      <label for="perm-${p.key}">${p.label}</label>
+    </div>
+  `).join('');
+}
+
+async function guardarRol() {
+  const nombre = document.getElementById('rol-nombre').value.trim();
+  if (!nombre) return toast('El nombre del rol es requerido','err');
+  const permisos = {};
+  PERMISOS_DISPONIBLES.forEach(p => {
+    const el = document.getElementById(`perm-${p.key}`);
+    if (el) permisos[p.key] = el.checked;
+  });
+  const body = { nombre, permisos };
+  const url = rolEditando ? `/api/roles/${rolEditando.id}` : '/api/roles';
+  const method = rolEditando ? 'PUT' : 'POST';
+  const r = await fetch(url, { method, headers:{'Content-Type':'application/json'}, body:JSON.stringify(body) });
+  const data = await r.json();
+  if (data.exito !== false) { cerrarPanelRol(); toast('Rol guardado'); cargarRoles(); cargarUsuarios(); }
+  else toast(data.mensaje||'Error','err');
+}
+
+init();
+</script>
+</body>
+</html>

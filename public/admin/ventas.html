@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+  <title>Ventas — MASTERISADO</title>
+  <script src="/admin/layout.js"></script>
+  <style id="base-css"></style>
+  <style>
+    .resumen-bar { display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:14px; margin-bottom:20px; }
+    .resumen-card { background:white; border-radius:10px; padding:16px; box-shadow:0 2px 8px rgba(0,0,0,0.07); border-left:4px solid #4A90D9; }
+    .resumen-label { font-size:11px; color:#888; font-weight:600; text-transform:uppercase; }
+    .resumen-valor { font-size:22px; font-weight:700; color:#1a1a2e; margin-top:4px; }
+  </style>
+</head>
+<body>
+<header>
+  <h1>MASTERISADO</h1>
+  <div class="header-right">
+    <span id="usuario-nombre"></span>
+    <form action="/logout" method="POST" style="margin:0"><button type="submit" class="btn-logout">Salir</button></form>
+  </div>
+</header>
+<nav id="nav-links"></nav>
+
+<main>
+  <h2 style="font-size:16px;color:#1a1a2e;margin-bottom:20px">💰 Historial de Ventas</h2>
+
+  <div class="resumen-bar" id="resumen-bar">
+    <div class="resumen-card"><div class="resumen-label">Cargando...</div></div>
+  </div>
+
+  <div class="card">
+    <div class="top-bar">
+      <div class="card-title" style="margin:0">Ventas registradas</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+        <input type="date" id="f-desde" style="padding:7px 10px;border:1.5px solid #d0d5dd;border-radius:7px;font-size:12px"/>
+        <input type="date" id="f-hasta" style="padding:7px 10px;border:1.5px solid #d0d5dd;border-radius:7px;font-size:12px"/>
+        <select id="f-estado" style="padding:7px 10px;border:1.5px solid #d0d5dd;border-radius:7px;font-size:12px">
+          <option value="">Todos los estados</option>
+          <option value="completada">Completada</option>
+          <option value="anulada">Anulada</option>
+        </select>
+        <button class="btn btn-primary btn-sm" onclick="cargarVentas()">Filtrar</button>
+      </div>
+    </div>
+    <div class="tabla-wrap">
+      <table>
+        <thead><tr><th>#</th><th>Fecha</th><th>Cliente</th><th>Subtotal</th><th>IVA</th><th>Total</th><th>Estado</th><th>Cajero</th><th>Acciones</th></tr></thead>
+        <tbody id="tabla-ventas"><tr><td colspan="9" style="text-align:center;color:#aaa;padding:30px">Cargando...</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+</main>
+
+<!-- Modal detalle venta -->
+<div class="modal-overlay" id="modal-venta">
+  <div class="modal" style="max-width:620px">
+    <div class="modal-title" id="v-titulo">Venta #</div>
+    <div id="v-info" style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:13px;color:#555;margin-bottom:16px"></div>
+    <div class="card-title" style="margin-bottom:10px">Productos vendidos</div>
+    <div id="v-items"></div>
+    <div style="text-align:right;margin-top:12px;font-size:13px">
+      <div>Subtotal: <strong id="v-subtotal"></strong></div>
+      <div>IVA: <strong id="v-iva"></strong></div>
+      <div style="font-size:15px;margin-top:4px">Total: <strong id="v-total"></strong></div>
+    </div>
+    <div class="modal-footer" id="v-footer">
+      <button class="btn" style="background:#eee;color:#555" onclick="cerrarModal()">Cerrar</button>
+    </div>
+  </div>
+</div>
+
+<script>
+document.getElementById('base-css').textContent = CSS_BASE;
+let ventaActual = null;
+
+async function init() {
+  const sesion = await cargarSesion();
+  if (!sesion) return;
+  renderNav('/admin/ventas', sesion);
+  cargarVentas();
+}
+
+async function cargarVentas() {
+  const desde = document.getElementById('f-desde').value;
+  const hasta = document.getElementById('f-hasta').value;
+  const estado = document.getElementById('f-estado').value;
+  let url = '/api/ventas?limit=200';
+  if (desde) url += `&desde=${desde}`;
+  if (hasta) url += `&hasta=${hasta}`;
+  if (estado) url += `&estado=${estado}`;
+
+  const ventas = await fetch(url).then(r=>r.json());
+
+  // Resumen
+  const activas = ventas.filter(v=>v.estado==='completada');
+  const totalVentas = activas.reduce((s,v)=>s+parseFloat(v.total||0),0);
+  const totalIVA = activas.reduce((s,v)=>s+parseFloat(v.iva_total||0),0);
+  document.getElementById('resumen-bar').innerHTML = `
+    <div class="resumen-card"><div class="resumen-label">Ventas en período</div><div class="resumen-valor">${ventas.length}</div></div>
+    <div class="resumen-card" style="border-left-color:#27AE60"><div class="resumen-label">Completadas</div><div class="resumen-valor">${activas.length}</div></div>
+    <div class="resumen-card" style="border-left-color:#4A90D9"><div class="resumen-label">Total facturado</div><div class="resumen-valor" style="font-size:16px">${fmtMoneda(totalVentas)}</div></div>
+    <div class="resumen-card" style="border-left-color:#f39c12"><div class="resumen-label">IVA generado</div><div class="resumen-valor" style="font-size:16px">${fmtMoneda(totalIVA)}</div></div>
+  `;
+
+  const tbody = document.getElementById('tabla-ventas');
+  if (!ventas.length) { tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:#aaa;padding:30px">Sin ventas en el período</td></tr>'; return; }
+  tbody.innerHTML = ventas.map(v => `<tr>
+    <td><strong>#${v.id}</strong></td>
+    <td style="font-size:12px;color:#888;white-space:nowrap">${fmtFechaHora(v.creado_en)}</td>
+    <td>${v.cliente||'Consumidor final'}</td>
+    <td>${fmtMoneda(v.subtotal)}</td>
+    <td>${fmtMoneda(v.iva_total)}</td>
+    <td><strong>${fmtMoneda(v.total)}</strong></td>
+    <td>${badge(v.estado==='completada'?'Completada':'Anulada', v.estado==='completada'?'verde':'rojo')}</td>
+    <td style="font-size:12px">${v.cajero||'—'}</td>
+    <td><div class="acciones">
+      <button class="btn btn-primary btn-sm" onclick="verVenta(${v.id})">Ver</button>
+      ${v.estado==='completada'?`<button class="btn btn-danger btn-sm" onclick="anularVenta(${v.id})">Anular</button>`:''}
+    </div></td>
+  </tr>`).join('');
+}
+
+async function verVenta(id) {
+  const v = await fetch(`/api/ventas/${id}`).then(r=>r.json());
+  ventaActual = v;
+  document.getElementById('v-titulo').textContent = `Venta #${v.id}`;
+  document.getElementById('v-info').innerHTML = `
+    <div><strong>Fecha:</strong> ${fmtFechaHora(v.creado_en)}</div>
+    <div><strong>Estado:</strong> ${badge(v.estado==='completada'?'Completada':'Anulada',v.estado==='completada'?'verde':'rojo')}</div>
+    <div><strong>Cliente:</strong> ${v.cliente||'Consumidor final'}</div>
+    <div><strong>Cajero:</strong> ${v.cajero||'—'}</div>
+  `;
+  const items = v.items || [];
+  document.getElementById('v-items').innerHTML = `<table style="width:100%;font-size:13px">
+    <thead><tr><th style="padding:8px;background:#f5f6fa">Producto</th><th style="padding:8px;background:#f5f6fa">Cant.</th><th style="padding:8px;background:#f5f6fa">Precio</th><th style="padding:8px;background:#f5f6fa">IVA</th><th style="padding:8px;background:#f5f6fa">Subtotal</th></tr></thead>
+    <tbody>${items.map(it=>`<tr>
+      <td style="padding:8px">${it.producto}</td>
+      <td style="padding:8px">${it.cantidad}</td>
+      <td style="padding:8px">${fmtMoneda(it.precio_unit)}</td>
+      <td style="padding:8px">${it.iva_porcentaje}%</td>
+      <td style="padding:8px"><strong>${fmtMoneda(it.cantidad*it.precio_unit)}</strong></td>
+    </tr>`).join('')}</tbody>
+  </table>`;
+  document.getElementById('v-subtotal').textContent = fmtMoneda(v.subtotal);
+  document.getElementById('v-iva').textContent = fmtMoneda(v.iva_total);
+  document.getElementById('v-total').textContent = fmtMoneda(v.total);
+  const footer = document.getElementById('v-footer');
+  footer.innerHTML = `<button class="btn" style="background:#eee;color:#555" onclick="cerrarModal()">Cerrar</button>`;
+  if (v.estado === 'completada') footer.innerHTML += ` <button class="btn btn-danger" onclick="anularVenta(${v.id})">Anular venta</button>`;
+  document.getElementById('modal-venta').classList.add('open');
+}
+
+function cerrarModal() { document.getElementById('modal-venta').classList.remove('open'); }
+
+async function anularVenta(id) {
+  if (!confirmar('¿Anular esta venta? El stock será restaurado automáticamente.')) return;
+  const r = await fetch(`/api/ventas/${id}/anular`, { method:'PUT' });
+  const data = await r.json();
+  if (data.exito) { cerrarModal(); toast('Venta anulada y stock restaurado'); cargarVentas(); }
+  else toast(data.mensaje||'Error','err');
+}
+
+init();
+</script>
+</body>
+</html>

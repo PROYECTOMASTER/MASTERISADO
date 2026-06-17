@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+  <title>Caja — MASTERISADO</title>
+  <style>
+    * { box-sizing:border-box; margin:0; padding:0; }
+    body { font-family:'Segoe UI',system-ui,sans-serif; background:#f0f2f5; min-height:100vh; }
+    header { background:#1a1a2e; color:white; padding:12px 24px; display:flex; align-items:center; justify-content:space-between; }
+    header h1 { font-size:17px; font-weight:700; letter-spacing:1px; }
+    .header-right { display:flex; align-items:center; gap:16px; font-size:12px; color:#aab; }
+    .btn-logout { background:none; border:none; color:#aab; cursor:pointer; font-size:12px; }
+    .layout { display:grid; grid-template-columns:1fr 380px; gap:0; height:calc(100vh - 49px); }
+
+    /* Lado izquierdo: búsqueda y productos */
+    .left { padding:20px; overflow-y:auto; display:flex; flex-direction:column; gap:16px; }
+    .search-bar { display:flex; gap:10px; }
+    .search-bar input { flex:1; padding:11px 16px; border:2px solid #d0d5dd; border-radius:10px; font-size:14px; outline:none; }
+    .search-bar input:focus { border-color:#4A90D9; }
+    .search-bar .btn-scan { background:#f5f6fa; border:2px solid #d0d5dd; border-radius:10px; padding:11px 16px; cursor:pointer; font-size:16px; }
+    .productos-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(160px,1fr)); gap:12px; }
+    .prod-card { background:white; border-radius:12px; padding:14px; cursor:pointer; border:2px solid transparent; transition:border-color 0.15s,transform 0.1s; box-shadow:0 2px 8px rgba(0,0,0,0.06); }
+    .prod-card:hover { border-color:#4A90D9; transform:translateY(-2px); }
+    .prod-card.agotado { opacity:0.5; cursor:not-allowed; }
+    .prod-nombre { font-size:13px; font-weight:600; color:#1a1a2e; margin-bottom:6px; line-height:1.3; }
+    .prod-precio { font-size:16px; font-weight:700; color:#27AE60; }
+    .prod-stock { font-size:11px; color:#888; margin-top:3px; }
+    .prod-iva { font-size:10px; color:#aaa; }
+
+    /* Lado derecho: ticket */
+    .right { background:white; border-left:1px solid #e8eaf0; display:flex; flex-direction:column; }
+    .ticket-header { background:#1a1a2e; color:white; padding:16px 20px; }
+    .ticket-header h2 { font-size:14px; font-weight:700; }
+    .ticket-items { flex:1; overflow-y:auto; padding:12px; }
+    .ticket-item { display:grid; grid-template-columns:1fr auto auto auto; gap:8px; align-items:center; padding:10px 0; border-bottom:1px solid #f0f0f5; }
+    .item-nombre { font-size:13px; font-weight:600; color:#1a1a2e; }
+    .item-precio { font-size:12px; color:#888; }
+    .item-qty { display:flex; align-items:center; gap:6px; }
+    .qty-btn { width:26px; height:26px; border-radius:6px; border:none; background:#f0f2f5; cursor:pointer; font-size:15px; font-weight:700; color:#555; }
+    .qty-num { font-size:13px; font-weight:700; min-width:24px; text-align:center; }
+    .item-subtotal { font-size:13px; font-weight:700; color:#1a1a2e; text-align:right; }
+    .item-del { background:none; border:none; cursor:pointer; color:#e74c3c; font-size:16px; padding:0 4px; }
+    .ticket-empty { text-align:center; color:#ccc; padding:40px 20px; font-size:13px; }
+
+    .ticket-footer { border-top:2px solid #e8eaf0; padding:16px 20px; background:#fafbff; }
+    .totales { margin-bottom:14px; }
+    .total-row { display:flex; justify-content:space-between; font-size:13px; color:#555; margin-bottom:5px; }
+    .total-row.gran-total { font-size:16px; font-weight:700; color:#1a1a2e; border-top:1px solid #e0e0e0; padding-top:8px; margin-top:8px; }
+    .cliente-row { margin-bottom:12px; }
+    .cliente-row input { width:100%; padding:8px 12px; border:1.5px solid #d0d5dd; border-radius:8px; font-size:12px; outline:none; }
+    .btn-cobrar { width:100%; padding:14px; background:#27AE60; color:white; border:none; border-radius:10px; font-size:15px; font-weight:700; cursor:pointer; letter-spacing:0.3px; }
+    .btn-cobrar:hover { background:#219a52; }
+    .btn-cobrar:disabled { background:#ccc; cursor:not-allowed; }
+    .btn-limpiar { width:100%; padding:9px; background:#f8f9fb; border:1.5px solid #e0e0e0; border-radius:8px; font-size:12px; cursor:pointer; color:#888; margin-top:8px; }
+
+    /* Modal confirmación pago */
+    .modal-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,0.5); z-index:200; align-items:center; justify-content:center; }
+    .modal-overlay.open { display:flex; }
+    .modal { background:white; border-radius:16px; padding:28px; width:340px; text-align:center; }
+    .modal h3 { font-size:18px; margin-bottom:6px; }
+    .modal .monto { font-size:32px; font-weight:700; color:#27AE60; margin:12px 0; }
+    .modal input { width:100%; padding:10px 14px; border:2px solid #d0d5dd; border-radius:10px; font-size:16px; text-align:center; font-weight:700; margin:8px 0; outline:none; }
+    .modal input:focus { border-color:#27AE60; }
+    .cambio-row { font-size:14px; color:#555; margin:8px 0; min-height:22px; }
+    .cambio-val { font-weight:700; color:#4A90D9; }
+    .modal-btns { display:flex; gap:10px; margin-top:16px; }
+    .modal-btns button { flex:1; padding:12px; border:none; border-radius:10px; font-size:14px; font-weight:700; cursor:pointer; }
+    .btn-confirmar { background:#27AE60; color:white; }
+    .btn-cancelar { background:#f0f0f0; color:#555; }
+
+    /* Recibo imprimible */
+    .recibo-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,0.6); z-index:300; align-items:center; justify-content:center; }
+    .recibo-overlay.open { display:flex; }
+    .recibo { background:white; border-radius:12px; padding:24px; width:320px; }
+    .recibo-titulo { text-align:center; font-size:18px; font-weight:700; margin-bottom:4px; }
+    .recibo-sub { text-align:center; font-size:11px; color:#888; margin-bottom:16px; }
+    .recibo-line { display:flex; justify-content:space-between; font-size:12px; padding:4px 0; border-bottom:1px dashed #eee; }
+    .recibo-total { display:flex; justify-content:space-between; font-size:14px; font-weight:700; padding:8px 0; }
+    .recibo-btns { display:flex; gap:10px; margin-top:16px; }
+    .recibo-btns button { flex:1; padding:10px; border:none; border-radius:8px; font-size:13px; font-weight:600; cursor:pointer; }
+
+    @media print {
+      body > *:not(.recibo-overlay) { display:none !important; }
+      .recibo-overlay { display:flex !important; position:static; background:none; }
+      .recibo-btns { display:none !important; }
+    }
+  </style>
+</head>
+<body>
+<header>
+  <h1>MASTERISADO — Caja</h1>
+  <div class="header-right">
+    <span id="usuario-nombre"></span>
+    <form action="/logout" method="POST" style="margin:0"><button type="submit" class="btn-logout">Salir</button></form>
+  </div>
+</header>
+
+<div class="layout">
+  <!-- CATÁLOGO -->
+  <div class="left">
+    <div class="search-bar">
+      <input id="buscador" placeholder="Buscar producto por nombre o código de barras..." oninput="filtrar()" autocomplete="off"/>
+    </div>
+    <div class="productos-grid" id="grid-productos">
+      <div style="grid-column:1/-1;color:#aaa;text-align:center;padding:30px">Cargando productos...</div>
+    </div>
+  </div>
+
+  <!-- TICKET -->
+  <div class="right">
+    <div class="ticket-header">
+      <h2>🧾 Ticket de venta</h2>
+    </div>
+    <div class="ticket-items" id="ticket-items">
+      <div class="ticket-empty">Agrega productos al ticket<br>buscando o haciendo clic</div>
+    </div>
+    <div class="ticket-footer">
+      <div class="cliente-row">
+        <input id="cliente-nombre" placeholder="Cliente (opcional)"/>
+      </div>
+      <div class="totales">
+        <div class="total-row"><span>Subtotal:</span><span id="res-subtotal">$0</span></div>
+        <div class="total-row"><span>IVA:</span><span id="res-iva">$0</span></div>
+        <div class="total-row gran-total"><span>TOTAL:</span><span id="res-total">$0</span></div>
+      </div>
+      <button class="btn-cobrar" id="btn-cobrar" disabled onclick="abrirPago()">Cobrar</button>
+      <button class="btn-limpiar" onclick="limpiarTicket()">Limpiar ticket</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal pago -->
+<div class="modal-overlay" id="modal-pago">
+  <div class="modal">
+    <h3>💵 Cobrar</h3>
+    <div class="monto" id="monto-cobrar">$0</div>
+    <label style="font-size:12px;color:#888;display:block;margin-bottom:4px">Efectivo recibido:</label>
+    <input type="number" id="efectivo" placeholder="0" oninput="calcularCambio()" min="0"/>
+    <div class="cambio-row" id="cambio-row"></div>
+    <div class="modal-btns">
+      <button class="btn-cancelar" onclick="cerrarPago()">Cancelar</button>
+      <button class="btn-confirmar" onclick="procesarVenta()">Confirmar venta</button>
+    </div>
+  </div>
+</div>
+
+<!-- Recibo -->
+<div class="recibo-overlay" id="recibo-overlay">
+  <div class="recibo">
+    <div class="recibo-titulo">MASTERISADO</div>
+    <div class="recibo-sub" id="rec-fecha"></div>
+    <div id="rec-items"></div>
+    <div class="recibo-total"><span>TOTAL:</span><span id="rec-total"></span></div>
+    <div class="recibo-total" style="color:#4A90D9;font-size:12px"><span>Efectivo:</span><span id="rec-efectivo"></span></div>
+    <div class="recibo-total" style="color:#27AE60;font-size:12px"><span>Cambio:</span><span id="rec-cambio"></span></div>
+    <div style="text-align:center;font-size:11px;color:#aaa;margin-top:12px">¡Gracias por su compra!</div>
+    <div class="recibo-btns">
+      <button style="background:#4A90D9;color:white" onclick="window.print()">🖨 Imprimir</button>
+      <button style="background:#27AE60;color:white" onclick="cerrarRecibo()">Nueva venta</button>
+    </div>
+  </div>
+</div>
+
+<script>
+let productos = [], carrito = [];
+
+async function init() {
+  const r = await fetch('/api/sesion');
+  if (!r.ok) { window.location.href = '/login'; return; }
+  const sesion = await r.json();
+  document.getElementById('usuario-nombre').textContent = `${sesion.nombre} · ${sesion.rol}`;
+  cargarProductos();
+}
+
+async function cargarProductos() {
+  const r = await fetch('/api/productos');
+  productos = (await r.json()).filter(p => p.activo);
+  renderGrid(productos);
+}
+
+function renderGrid(lista) {
+  const grid = document.getElementById('grid-productos');
+  if (!lista.length) { grid.innerHTML = '<div style="grid-column:1/-1;color:#aaa;text-align:center;padding:30px">Sin productos</div>'; return; }
+  grid.innerHTML = lista.map(p => {
+    const agotado = p.stock_actual <= 0;
+    return `<div class="prod-card ${agotado?'agotado':''}" onclick="${agotado?'':'agregarAlCarrito('+p.id+')'}">
+      <div class="prod-nombre">${p.nombre}</div>
+      <div class="prod-precio">$${parseFloat(p.precio_venta).toLocaleString('es-CO')}</div>
+      <div class="prod-stock">${agotado?'Agotado':'Stock: '+p.stock_actual}</div>
+      <div class="prod-iva">IVA ${p.iva_porcentaje}%</div>
+    </div>`;
+  }).join('');
+}
+
+function filtrar() {
+  const q = document.getElementById('buscador').value.toLowerCase();
+  if (!q) { renderGrid(productos); return; }
+  renderGrid(productos.filter(p => p.nombre.toLowerCase().includes(q) || (p.codigo_barras||'').includes(q) || p.sku.toLowerCase().includes(q)));
+}
+
+function agregarAlCarrito(id) {
+  const prod = productos.find(p => p.id === id);
+  if (!prod || prod.stock_actual <= 0) return;
+  const item = carrito.find(i => i.id === id);
+  if (item) {
+    if (item.cantidad >= prod.stock_actual) { mostrarMsg('Stock insuficiente'); return; }
+    item.cantidad++;
+  } else {
+    carrito.push({ id: prod.id, nombre: prod.nombre, precio: parseFloat(prod.precio_venta), iva: parseFloat(prod.iva_porcentaje), cantidad: 1, stock: prod.stock_actual });
+  }
+  renderTicket();
+}
+
+function renderTicket() {
+  const cont = document.getElementById('ticket-items');
+  if (!carrito.length) {
+    cont.innerHTML = '<div class="ticket-empty">Agrega productos al ticket<br>buscando o haciendo clic</div>';
+    actualizarTotales();
+    return;
+  }
+  cont.innerHTML = carrito.map((it,i) => `
+    <div class="ticket-item">
+      <div>
+        <div class="item-nombre">${it.nombre}</div>
+        <div class="item-precio">$${it.precio.toLocaleString('es-CO')} × ${it.cantidad}</div>
+      </div>
+      <div class="item-qty">
+        <button class="qty-btn" onclick="cambiarQty(${i},-1)">−</button>
+        <span class="qty-num">${it.cantidad}</span>
+        <button class="qty-btn" onclick="cambiarQty(${i},1)">+</button>
+      </div>
+      <div class="item-subtotal">$${(it.precio*it.cantidad).toLocaleString('es-CO')}</div>
+      <button class="item-del" onclick="eliminarItem(${i})">✕</button>
+    </div>
+  `).join('');
+  actualizarTotales();
+}
+
+function cambiarQty(i, delta) {
+  carrito[i].cantidad += delta;
+  if (carrito[i].cantidad <= 0) { carrito.splice(i,1); }
+  else if (carrito[i].cantidad > carrito[i].stock) { carrito[i].cantidad = carrito[i].stock; }
+  renderTicket();
+}
+
+function eliminarItem(i) { carrito.splice(i,1); renderTicket(); }
+
+function limpiarTicket() { carrito = []; renderTicket(); }
+
+function actualizarTotales() {
+  let subtotal = 0, ivaTotal = 0;
+  carrito.forEach(it => {
+    const base = it.precio * it.cantidad / (1 + it.iva/100);
+    const iva = it.precio * it.cantidad - base;
+    subtotal += base;
+    ivaTotal += iva;
+  });
+  const total = subtotal + ivaTotal;
+  document.getElementById('res-subtotal').textContent = '$' + subtotal.toLocaleString('es-CO',{maximumFractionDigits:0});
+  document.getElementById('res-iva').textContent = '$' + ivaTotal.toLocaleString('es-CO',{maximumFractionDigits:0});
+  document.getElementById('res-total').textContent = '$' + total.toLocaleString('es-CO',{maximumFractionDigits:0});
+  document.getElementById('btn-cobrar').disabled = carrito.length === 0;
+  return total;
+}
+
+function abrirPago() {
+  const total = actualizarTotales();
+  document.getElementById('monto-cobrar').textContent = '$' + total.toLocaleString('es-CO',{maximumFractionDigits:0});
+  document.getElementById('efectivo').value = '';
+  document.getElementById('cambio-row').innerHTML = '';
+  document.getElementById('modal-pago').classList.add('open');
+  setTimeout(() => document.getElementById('efectivo').focus(), 100);
+}
+
+function cerrarPago() { document.getElementById('modal-pago').classList.remove('open'); }
+
+function calcularCambio() {
+  const total = carrito.reduce((s,it) => s + it.precio*it.cantidad, 0);
+  const efectivo = parseFloat(document.getElementById('efectivo').value)||0;
+  const cambio = efectivo - total;
+  const el = document.getElementById('cambio-row');
+  if (efectivo > 0) {
+    if (cambio < 0) el.innerHTML = `<span style="color:#e74c3c">Faltan: $${Math.abs(cambio).toLocaleString('es-CO',{maximumFractionDigits:0})}</span>`;
+    else el.innerHTML = `Cambio: <span class="cambio-val">$${cambio.toLocaleString('es-CO',{maximumFractionDigits:0})}</span>`;
+  } else { el.innerHTML = ''; }
+}
+
+async function procesarVenta() {
+  const total = carrito.reduce((s,it) => s + it.precio*it.cantidad, 0);
+  const efectivo = parseFloat(document.getElementById('efectivo').value)||0;
+  if (efectivo < total) { document.getElementById('cambio-row').innerHTML = '<span style="color:#e74c3c">El efectivo no es suficiente</span>'; return; }
+  const cliente = document.getElementById('cliente-nombre').value;
+  const body = {
+    items: carrito.map(it => ({ producto_id:it.id, cantidad:it.cantidad, precio_unit:it.precio, iva_porcentaje:it.iva })),
+    cliente_nombre: cliente || null,
+    efectivo_recibido: efectivo,
+  };
+  const r = await fetch('/api/ventas', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body) });
+  const data = await r.json();
+  if (data.exito) {
+    cerrarPago();
+    mostrarRecibo(data, efectivo, total);
+    carrito = [];
+    renderTicket();
+    document.getElementById('cliente-nombre').value = '';
+    cargarProductos();
+  } else { document.getElementById('cambio-row').innerHTML = `<span style="color:#e74c3c">${data.mensaje||'Error al procesar'}</span>`; }
+}
+
+function mostrarRecibo(data, efectivo, total) {
+  document.getElementById('rec-fecha').textContent = new Date().toLocaleString('es-CO');
+  document.getElementById('rec-items').innerHTML = data.items
+    ? data.items.map(it=>`<div class="recibo-line"><span>${it.producto} × ${it.cantidad}</span><span>$${(it.precio_unit*it.cantidad).toLocaleString('es-CO',{maximumFractionDigits:0})}</span></div>`).join('')
+    : carrito.map(it=>`<div class="recibo-line"><span>${it.nombre} × ${it.cantidad}</span><span>$${(it.precio*it.cantidad).toLocaleString('es-CO',{maximumFractionDigits:0})}</span></div>`).join('');
+  document.getElementById('rec-total').textContent = '$' + total.toLocaleString('es-CO',{maximumFractionDigits:0});
+  document.getElementById('rec-efectivo').textContent = '$' + efectivo.toLocaleString('es-CO',{maximumFractionDigits:0});
+  document.getElementById('rec-cambio').textContent = '$' + (efectivo-total).toLocaleString('es-CO',{maximumFractionDigits:0});
+  document.getElementById('recibo-overlay').classList.add('open');
+}
+
+function cerrarRecibo() { document.getElementById('recibo-overlay').classList.remove('open'); }
+
+function mostrarMsg(msg) {
+  const el = document.createElement('div');
+  el.style.cssText = 'position:fixed;bottom:24px;right:24px;z-index:9999;padding:12px 20px;border-radius:10px;font-size:13px;font-weight:600;background:#e74c3c;color:white;box-shadow:0 4px 16px rgba(0,0,0,0.15)';
+  el.textContent = msg;
+  document.body.appendChild(el);
+  setTimeout(() => el.remove(), 2500);
+}
+
+// Tecla Enter en buscador busca por código exacto y agrega
+document.addEventListener('DOMContentLoaded', () => {
+  document.getElementById('buscador').addEventListener('keydown', e => {
+    if (e.key === 'Enter') {
+      const q = e.target.value.trim();
+      const prod = productos.find(p => p.codigo_barras === q || p.sku === q);
+      if (prod) { agregarAlCarrito(prod.id); e.target.value = ''; renderGrid(productos); }
+    }
+  });
+});
+
+init();
+</script>
+</body>
+</html>

@@ -10,304 +10,689 @@ const PORT = process.env.PORT || 3000;
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
+app.use(session({
+  secret: process.env.SESSION_SECRET || 'clave-secreta-masterisado',
+  resave: false,
+  saveUninitialized: false,
+  cookie: { maxAge: 1000 * 60 * 60 * 8 },
+}));
 
-app.use(
-  session({
-    secret: process.env.SESSION_SECRET || 'clave-secreta-masterisado',
-    resave: false,
-    saveUninitialized: false,
-    cookie: { maxAge: 1000 * 60 * 60 },
-  })
-);
+// ── Helpers ──────────────────────────────────────────────────────────────────
 
 const requireAuth = (req, res, next) => {
   if (!req.session.usuario) return res.redirect('/login');
   next();
 };
 
-const requireAdmin = (req, res, next) => {
-  if (!req.session.usuario || req.session.usuario.rol !== 'admin') {
-    return res.status(403).json({ mensaje: 'Acceso denegado' });
-  }
+const requirePermiso = (permiso) => async (req, res, next) => {
+  if (!req.session.usuario) return res.status(401).json({ mensaje: 'No autenticado' });
+  const { permisos } = req.session.usuario;
+  if (!permisos || !permisos[permiso]) return res.status(403).json({ mensaje: 'Sin permiso' });
   next();
 };
 
-// ── Setup inicial (solo funciona si no hay ningún admin aún) ─────────────────
+const requirePermisoOr = (...permisos) => (req, res, next) => {
+  if (!req.session.usuario) return res.status(401).json({ mensaje: 'No autenticado' });
+  const p = req.session.usuario.permisos || {};
+  if (!permisos.some(k => p[k])) return res.status(403).json({ mensaje: 'Sin permiso' });
+  next();
+};
 
-app.get('/setup-admin', async (req, res) => {
+const requireSuperusuario = (req, res, next) => {
+  if (!req.session.usuario?.permisos?.asignar_admin)
+    return res.status(403).json({ mensaje: 'Solo el superusuario puede realizar esta acción' });
+  next();
+};
+
+async function registrarMovimiento(client, { producto_id, lote_id, tipo, cantidad, referencia_id, referencia_tipo, motivo, usuario_id }) {
+  const r = await client.query('SELECT stock_actual FROM productos WHERE id = $1', [producto_id]);
+  const antes = r.rows[0].stock_actual;
+  const despues = antes + cantidad;
+  await client.query(
+    `INSERT INTO movimientos_stock
+       (producto_id, lote_id, tipo, cantidad, cantidad_antes, cantidad_despues, referencia_id, referencia_tipo, motivo, usuario_id)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+    [producto_id, lote_id || null, tipo, Math.abs(cantidad), antes, despues, referencia_id || null, referencia_tipo || null, motivo || '', usuario_id]
+  );
+  await client.query('UPDATE productos SET stock_actual = $1 WHERE id = $2', [despues, producto_id]);
+}
+
+// ── Setup inicial ─────────────────────────────────────────────────────────────
+
+app.get('/setup-superusuario', async (req, res) => {
   try {
-    const check = await pool.query("SELECT id FROM usuarios WHERE rol = 'admin'");
-    if (check.rows.length > 0) {
-      return res.send('Ya existe un administrador. Esta ruta está desactivada.');
-    }
-    const r = await pool.query("SELECT id, email FROM usuarios ORDER BY id LIMIT 1");
-    if (!r.rows.length) return res.send('No hay usuarios registrados aún. Regístrate primero.');
-    await pool.query("UPDATE usuarios SET rol = 'admin' WHERE id = $1", [r.rows[0].id]);
-    res.send(`✅ Usuario <strong>${r.rows[0].email}</strong> ahora es administrador. <a href="/login">Iniciar sesión</a>`);
-  } catch (err) {
-    res.status(500).send('Error: ' + err.message);
-  }
+    const check = await pool.query("SELECT id FROM roles WHERE nombre = 'superusuario'");
+    if (!check.rows.length) return res.send('Error: roles no inicializados.');
+    const superRol = check.rows[0].id;
+    const yaHay = await pool.query('SELECT id FROM usuarios WHERE rol_id = $1', [superRol]);
+    if (yaHay.rows.length > 0) return res.send('Ya existe un superusuario. Ruta desactivada.');
+    const r = await pool.query('SELECT id, email FROM usuarios ORDER BY id LIMIT 1');
+    if (!r.rows.length) return res.send('Regístrate primero.');
+    await pool.query('UPDATE usuarios SET rol_id = $1 WHERE id = $2', [superRol, r.rows[0].id]);
+    res.send(`✅ <strong>${r.rows[0].email}</strong> ahora es superusuario. <a href="/login">Ingresar</a>`);
+  } catch (err) { res.status(500).send('Error: ' + err.message); }
 });
 
-// ── Rutas generales ──────────────────────────────────────────────────────────
+// ── Auth ──────────────────────────────────────────────────────────────────────
 
-app.get('/', (req, res) => {
-  res.redirect(req.session.usuario ? '/tienda' : '/login');
-});
-
+app.get('/', (req, res) => res.redirect(req.session.usuario ? '/admin' : '/login'));
 app.get('/login', (req, res) => {
-  if (req.session.usuario) return res.redirect('/tienda');
+  if (req.session.usuario) return res.redirect('/admin');
   res.sendFile(path.join(__dirname, 'public', 'login.html'));
 });
-
 app.get('/registro', (req, res) => {
-  if (req.session.usuario) return res.redirect('/tienda');
+  if (req.session.usuario) return res.redirect('/admin');
   res.sendFile(path.join(__dirname, 'public', 'registro.html'));
 });
 
 app.post('/login', async (req, res) => {
   const { email, password } = req.body;
   try {
-    const r = await pool.query('SELECT * FROM usuarios WHERE email = $1', [email]);
-    const usuario = r.rows[0];
-    if (!usuario || !bcrypt.compareSync(password, usuario.password)) {
+    const r = await pool.query(`
+      SELECT u.*, ro.nombre AS rol_nombre, ro.permisos
+      FROM usuarios u
+      LEFT JOIN roles ro ON u.rol_id = ro.id
+      WHERE u.email = $1
+    `, [email]);
+    const u = r.rows[0];
+    if (!u || !bcrypt.compareSync(password, u.password))
       return res.json({ exito: false, mensaje: 'Correo o contraseña incorrectos' });
-    }
-    req.session.usuario = { id: usuario.id, nombre: usuario.nombre, email: usuario.email, rol: usuario.rol };
-    res.json({ exito: true, rol: usuario.rol });
-  } catch (err) {
-    console.error(err);
-    res.json({ exito: false, mensaje: 'Error del servidor' });
-  }
+    req.session.usuario = {
+      id: u.id, nombre: u.nombre, email: u.email,
+      rol: u.rol_nombre, permisos: u.permisos || {}
+    };
+    const destino = u.permisos?.ventas && !u.permisos?.productos ? '/caja' : '/admin';
+    res.json({ exito: true, destino });
+  } catch (err) { console.error(err); res.json({ exito: false, mensaje: 'Error del servidor' }); }
 });
 
 app.post('/registro', async (req, res) => {
   const { nombre, email, password } = req.body;
   try {
-    const existe = await pool.query('SELECT id FROM usuarios WHERE email = $1', [email]);
-    if (existe.rows.length > 0) return res.json({ exito: false, mensaje: 'Correo ya registrado' });
+    const existe = await pool.query('SELECT id FROM usuarios WHERE email=$1', [email]);
+    if (existe.rows.length) return res.json({ exito: false, mensaje: 'Correo ya registrado' });
+    const rol = await pool.query("SELECT id FROM roles WHERE nombre='cajero'");
     const hash = bcrypt.hashSync(password, 10);
-    await pool.query('INSERT INTO usuarios (nombre, email, password) VALUES ($1, $2, $3)', [nombre, email, hash]);
+    await pool.query('INSERT INTO usuarios (nombre,email,password,rol_id) VALUES($1,$2,$3,$4)',
+      [nombre, email, hash, rol.rows[0]?.id || null]);
     res.json({ exito: true });
-  } catch (err) {
-    console.error(err);
-    res.json({ exito: false, mensaje: 'Error al registrar' });
-  }
+  } catch (err) { console.error(err); res.json({ exito: false, mensaje: 'Error al registrar' }); }
 });
 
-app.post('/logout', (req, res) => {
-  req.session.destroy();
-  res.redirect('/login');
-});
-
-app.get('/api/usuario', (req, res) => {
+app.post('/logout', (req, res) => { req.session.destroy(); res.redirect('/login'); });
+app.get('/api/sesion', (req, res) => {
   if (!req.session.usuario) return res.status(401).json({ mensaje: 'No autenticado' });
   res.json(req.session.usuario);
 });
 
-// ── Tienda (clientes) ────────────────────────────────────────────────────────
+// ── Páginas admin ─────────────────────────────────────────────────────────────
 
-app.get('/tienda', requireAuth, (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'tienda.html'));
+const adminPage = (file) => [requireAuth, (req, res) => {
+  if (!req.session.usuario?.permisos?.productos && !req.session.usuario?.permisos?.ventas)
+    return res.redirect('/login');
+  res.sendFile(path.join(__dirname, 'public', 'admin', file));
+}];
+
+app.get('/admin',              requireAuth, (req, res) => res.sendFile(path.join(__dirname, 'public', 'admin', 'index.html')));
+app.get('/admin/productos',    ...adminPage('productos.html'));
+app.get('/admin/stock',        ...adminPage('stock.html'));
+app.get('/admin/compras',      ...adminPage('compras.html'));
+app.get('/admin/ventas',       ...adminPage('ventas.html'));
+app.get('/admin/reportes',     ...adminPage('reportes.html'));
+app.get('/admin/usuarios',     ...adminPage('usuarios.html'));
+app.get('/caja',               requireAuth, (req, res) => res.sendFile(path.join(__dirname, 'public', 'caja', 'index.html')));
+
+// ── API: Catálogos ────────────────────────────────────────────────────────────
+
+app.get('/api/categorias',     async (_, res) => { const r = await pool.query('SELECT * FROM categorias ORDER BY nombre'); res.json(r.rows); });
+app.post('/api/categorias',    requireAuth, requirePermiso('productos'), async (req, res) => {
+  try { const r = await pool.query('INSERT INTO categorias (nombre) VALUES ($1) RETURNING *', [req.body.nombre]); res.json(r.rows[0]); }
+  catch (err) { res.json({ error: err.message }); }
 });
+
+app.get('/api/marcas',         async (_, res) => { const r = await pool.query('SELECT * FROM marcas ORDER BY nombre'); res.json(r.rows); });
+app.post('/api/marcas',        requireAuth, requirePermiso('productos'), async (req, res) => {
+  try { const r = await pool.query('INSERT INTO marcas (nombre) VALUES ($1) RETURNING *', [req.body.nombre]); res.json(r.rows[0]); }
+  catch (err) { res.json({ error: err.message }); }
+});
+
+app.get('/api/unidades',       async (_, res) => { const r = await pool.query('SELECT * FROM unidades_medida ORDER BY nombre'); res.json(r.rows); });
+app.get('/api/proveedores',    requireAuth, requirePermiso('compras'), async (_, res) => { const r = await pool.query("SELECT * FROM proveedores ORDER BY nombre"); res.json(r.rows); });
+app.post('/api/proveedores',   requireAuth, requirePermiso('compras'), async (req, res) => {
+  const { nombre, nit, telefono, email, direccion } = req.body;
+  try { const r = await pool.query('INSERT INTO proveedores (nombre,nit,telefono,email,direccion) VALUES ($1,$2,$3,$4,$5) RETURNING *', [nombre,nit||null,telefono||null,email||null,direccion||null]); res.json({ exito: true, proveedor: r.rows[0] }); }
+  catch (err) { res.json({ exito: false, mensaje: err.message }); }
+});
+app.put('/api/proveedores/:id', requireAuth, requirePermiso('compras'), async (req, res) => {
+  const { nombre, nit, telefono, email, direccion } = req.body;
+  try { await pool.query('UPDATE proveedores SET nombre=$1,nit=$2,telefono=$3,email=$4,direccion=$5 WHERE id=$6', [nombre,nit||null,telefono||null,email||null,direccion||null,req.params.id]); res.json({ exito: true }); }
+  catch (err) { res.json({ exito: false, mensaje: err.message }); }
+});
+
+app.get('/api/clientes',       requireAuth, requirePermiso('ventas'), async (_, res) => { const r = await pool.query("SELECT * FROM clientes WHERE activo=TRUE ORDER BY nombre"); res.json(r.rows); });
+app.post('/api/clientes',      requireAuth, requirePermiso('ventas'), async (req, res) => {
+  const { nombre, documento, telefono, email } = req.body;
+  try { const r = await pool.query('INSERT INTO clientes (nombre,documento,telefono,email) VALUES ($1,$2,$3,$4) RETURNING *', [nombre,documento,telefono,email]); res.json(r.rows[0]); }
+  catch (err) { res.json({ error: err.message }); }
+});
+
+// ── API: Productos ────────────────────────────────────────────────────────────
 
 app.get('/api/productos', async (req, res) => {
   try {
     const r = await pool.query(`
-      SELECT p.id, p.nombre, p.descripcion, p.precio, p.stock, p.imagen_url, c.nombre AS categoria
+      SELECT p.*, c.nombre AS categoria, m.nombre AS marca, u.simbolo AS unidad_simbolo, u.nombre AS unidad_nombre
       FROM productos p
       LEFT JOIN categorias c ON p.categoria_id = c.id
-      WHERE p.activo = TRUE
-      ORDER BY p.nombre
+      LEFT JOIN marcas m ON p.marca_id = m.id
+      LEFT JOIN unidades_medida u ON p.unidad_id = u.id
+      WHERE p.activo = TRUE ORDER BY p.nombre
     `);
     res.json(r.rows);
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ mensaje: 'Error al obtener productos' });
-  }
+  } catch (err) { res.status(500).json({ mensaje: err.message }); }
 });
 
-// ── Comprar ──────────────────────────────────────────────────────────────────
+app.post('/api/productos', requireAuth, requirePermiso('productos'), async (req, res) => {
+  const { sku, codigo_barras, nombre, descripcion, categoria_id, marca_id, unidad_id,
+          precio_compra, precio_venta, iva_porcentaje, stock_minimo, punto_reorden, ubicacion, imagen_url } = req.body;
+  try {
+    const r = await pool.query(`
+      INSERT INTO productos (sku,codigo_barras,nombre,descripcion,categoria_id,marca_id,unidad_id,
+        precio_compra,precio_venta,iva_porcentaje,stock_minimo,punto_reorden,ubicacion,imagen_url)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) RETURNING *`,
+      [sku,codigo_barras||null,nombre,descripcion||'',categoria_id||null,marca_id||null,unidad_id||null,
+       precio_compra,precio_venta,iva_porcentaje||19,stock_minimo||0,punto_reorden||0,ubicacion||'',imagen_url||'']);
+    res.json({ exito: true, producto: r.rows[0] });
+  } catch (err) { res.json({ exito: false, mensaje: err.message }); }
+});
 
-app.post('/api/comprar', requireAuth, async (req, res) => {
-  const { items } = req.body; // [{ producto_id, cantidad }]
-  const cliente = req.session.usuario;
+app.put('/api/productos/:id', requireAuth, requirePermiso('productos'), async (req, res) => {
+  const { sku, codigo_barras, nombre, descripcion, categoria_id, marca_id, unidad_id,
+          precio_compra, precio_venta, iva_porcentaje, stock_minimo, punto_reorden, ubicacion, imagen_url, activo } = req.body;
+  try {
+    await pool.query(`
+      UPDATE productos SET sku=$1,codigo_barras=$2,nombre=$3,descripcion=$4,categoria_id=$5,marca_id=$6,
+        unidad_id=$7,precio_compra=$8,precio_venta=$9,iva_porcentaje=$10,stock_minimo=$11,
+        punto_reorden=$12,ubicacion=$13,imagen_url=$14,activo=$15 WHERE id=$16`,
+      [sku,codigo_barras||null,nombre,descripcion||'',categoria_id||null,marca_id||null,unidad_id||null,
+       precio_compra,precio_venta,iva_porcentaje,stock_minimo,punto_reorden,ubicacion||'',imagen_url||'',
+       activo !== false, req.params.id]);
+    res.json({ exito: true });
+  } catch (err) { res.json({ exito: false, mensaje: err.message }); }
+});
 
+// ── API: Stock y kardex ───────────────────────────────────────────────────────
+
+app.get('/api/stock', requireAuth, requirePermiso('stock'), async (_, res) => {
+  try {
+    const r = await pool.query(`
+      SELECT p.id, p.sku, p.nombre, p.stock_actual, p.stock_minimo, p.punto_reorden,
+             p.precio_compra, p.ubicacion,
+             (p.stock_actual * p.precio_compra) AS valorizacion,
+             CASE WHEN p.stock_actual = 0 THEN 'agotado'
+                  WHEN p.stock_actual <= p.stock_minimo THEN 'bajo'
+                  ELSE 'ok' END AS estado_stock
+      FROM productos p WHERE p.activo = TRUE ORDER BY p.nombre
+    `);
+    res.json(r.rows);
+  } catch (err) { res.status(500).json({ mensaje: err.message }); }
+});
+
+app.post('/api/stock/movimiento', requireAuth, requirePermiso('stock'), async (req, res) => {
+  const { producto_id, lote_id, tipo, cantidad, motivo } = req.body;
+  const delta = tipo === 'entrada' ? Math.abs(cantidad) : -Math.abs(cantidad);
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
-
-    let total = 0;
-    const detalles = [];
-
-    for (const item of items) {
-      const r = await client.query('SELECT * FROM productos WHERE id = $1 AND activo = TRUE FOR UPDATE', [item.producto_id]);
-      const producto = r.rows[0];
-      if (!producto) throw new Error(`Producto ${item.producto_id} no encontrado`);
-      if (producto.stock < item.cantidad) throw new Error(`Stock insuficiente para "${producto.nombre}"`);
-      total += producto.precio * item.cantidad;
-      detalles.push({ producto, cantidad: item.cantidad });
+    const r = await client.query('SELECT stock_actual FROM productos WHERE id=$1 FOR UPDATE', [producto_id]);
+    if (!r.rows.length) throw new Error('Producto no encontrado');
+    if (r.rows[0].stock_actual + delta < 0) throw new Error('Stock insuficiente');
+    await registrarMovimiento(client, { producto_id, lote_id, tipo, cantidad: delta, motivo, usuario_id: req.session.usuario.id });
+    if (lote_id) {
+      await client.query('UPDATE lotes SET cantidad_actual = cantidad_actual + $1 WHERE id = $2', [delta, lote_id]);
     }
-
-    const venta = await client.query(
-      'INSERT INTO ventas (usuario_id, total) VALUES ($1, $2) RETURNING id',
-      [cliente.id, total]
-    );
-    const ventaId = venta.rows[0].id;
-
-    for (const d of detalles) {
-      await client.query(
-        'INSERT INTO detalle_ventas (venta_id, producto_id, cantidad, precio_unit) VALUES ($1, $2, $3, $4)',
-        [ventaId, d.producto.id, d.cantidad, d.producto.precio]
-      );
-      await client.query('UPDATE productos SET stock = stock - $1 WHERE id = $2', [d.cantidad, d.producto.id]);
-    }
-
     await client.query('COMMIT');
-    res.json({ exito: true, venta_id: ventaId, total });
+    const nuevo = await pool.query('SELECT stock_actual FROM productos WHERE id=$1', [producto_id]);
+    res.json({ exito: true, nuevo_stock: nuevo.rows[0].stock_actual });
   } catch (err) {
     await client.query('ROLLBACK');
-    console.error(err);
     res.json({ exito: false, mensaje: err.message });
-  } finally {
-    client.release();
+  } finally { client.release(); }
+});
+
+app.get('/api/stock/kardex', requireAuth, requirePermiso('stock'), async (req, res) => {
+  const { producto_id, desde, hasta, limit = 200 } = req.query;
+  let where = ['1=1'];
+  const params = [];
+  if (producto_id) { params.push(producto_id); where.push(`m.producto_id = $${params.length}`); }
+  if (desde) { params.push(desde); where.push(`m.creado_en >= $${params.length}`); }
+  if (hasta) { params.push(hasta); where.push(`m.creado_en <= $${params.length}::date + 1`); }
+  params.push(limit);
+  try {
+    const r = await pool.query(`
+      SELECT m.*, p.nombre AS producto, p.sku, u.nombre AS usuario,
+             l.numero_lote, l.fecha_vencimiento
+      FROM movimientos_stock m
+      JOIN productos p ON m.producto_id = p.id
+      LEFT JOIN usuarios u ON m.usuario_id = u.id
+      LEFT JOIN lotes l ON m.lote_id = l.id
+      WHERE ${where.join(' AND ')}
+      ORDER BY m.creado_en DESC LIMIT $${params.length}
+    `, params);
+    res.json(r.rows);
+  } catch (err) { res.status(500).json({ mensaje: err.message }); }
+});
+
+app.get('/api/lotes', requireAuth, requirePermiso('stock'), async (req, res) => {
+  const { producto_id } = req.query;
+  try {
+    const r = await pool.query(`
+      SELECT l.*, p.nombre AS producto
+      FROM lotes l JOIN productos p ON l.producto_id = p.id
+      WHERE l.activo = TRUE ${producto_id ? 'AND l.producto_id = $1' : ''}
+      ORDER BY l.fecha_vencimiento ASC NULLS LAST
+    `, producto_id ? [producto_id] : []);
+    res.json(r.rows);
+  } catch (err) { res.status(500).json({ mensaje: err.message }); }
+});
+
+app.post('/api/lotes', requireAuth, requirePermiso('stock'), async (req, res) => {
+  const { producto_id, numero_lote, fecha_vencimiento, cantidad } = req.body;
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const lote = await client.query(
+      'INSERT INTO lotes (producto_id,numero_lote,fecha_vencimiento,cantidad_inicial,cantidad_actual) VALUES ($1,$2,$3,$4,$4) RETURNING *',
+      [producto_id, numero_lote, fecha_vencimiento || null, cantidad]
+    );
+    await registrarMovimiento(client, {
+      producto_id, lote_id: lote.rows[0].id, tipo: 'entrada',
+      cantidad: Math.abs(cantidad), motivo: `Lote ${numero_lote}`, usuario_id: req.session.usuario.id
+    });
+    await client.query('COMMIT');
+    res.json({ exito: true, lote: lote.rows[0] });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    res.json({ exito: false, mensaje: err.message });
+  } finally { client.release(); }
+});
+
+// ── API: Compras ──────────────────────────────────────────────────────────────
+
+app.get('/api/compras', requireAuth, requirePermiso('compras'), async (_, res) => {
+  try {
+    const r = await pool.query(`
+      SELECT oc.*, p.nombre AS proveedor, u.nombre AS usuario
+      FROM ordenes_compra oc
+      LEFT JOIN proveedores p ON oc.proveedor_id = p.id
+      LEFT JOIN usuarios u ON oc.usuario_id = u.id
+      ORDER BY oc.creado_en DESC
+    `);
+    res.json(r.rows);
+  } catch (err) { res.status(500).json({ mensaje: err.message }); }
+});
+
+app.get('/api/compras/:id', requireAuth, requirePermiso('compras'), async (req, res) => {
+  try {
+    const oc = await pool.query(`SELECT oc.*,p.nombre AS proveedor FROM ordenes_compra oc LEFT JOIN proveedores p ON oc.proveedor_id=p.id WHERE oc.id=$1`, [req.params.id]);
+    const det = await pool.query(`SELECT d.*,pr.nombre AS producto,pr.sku FROM detalle_ordenes_compra d JOIN productos pr ON d.producto_id=pr.id WHERE d.orden_id=$1`, [req.params.id]);
+    res.json({ ...oc.rows[0], items: det.rows });
+  } catch (err) { res.status(500).json({ mensaje: err.message }); }
+});
+
+app.post('/api/compras', requireAuth, requirePermiso('compras'), async (req, res) => {
+  const { proveedor_id, items, notas } = req.body;
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    let subtotal = 0, iva_total = 0;
+    for (const i of items) {
+      const base = i.precio_unit * i.cantidad;
+      subtotal += base;
+    }
+    const oc = await client.query(
+      'INSERT INTO ordenes_compra (proveedor_id,subtotal,iva_total,total,notas,usuario_id) VALUES ($1,$2,$3,$4,$5,$6) RETURNING id',
+      [proveedor_id || null, subtotal, iva_total, subtotal + iva_total, notas || '', req.session.usuario.id]
+    );
+    const ocId = oc.rows[0].id;
+    for (const i of items) {
+      await client.query(
+        'INSERT INTO detalle_ordenes_compra (orden_id,producto_id,cantidad,precio_unit,numero_lote,fecha_vencimiento) VALUES ($1,$2,$3,$4,$5,$6)',
+        [ocId, i.producto_id, i.cantidad, i.precio_unit, i.numero_lote || null, i.fecha_vencimiento || null]
+      );
+    }
+    await client.query('COMMIT');
+    res.json({ exito: true, orden_id: ocId });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    res.json({ exito: false, mensaje: err.message });
+  } finally { client.release(); }
+});
+
+app.put('/api/compras/:id/recibir', requireAuth, requirePermiso('compras'), async (req, res) => {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const oc = await client.query("SELECT * FROM ordenes_compra WHERE id=$1 AND estado != 'recibida'", [req.params.id]);
+    if (!oc.rows.length) throw new Error('Orden no encontrada o ya recibida');
+    const items = await client.query('SELECT * FROM detalle_ordenes_compra WHERE orden_id=$1', [req.params.id]);
+    for (const item of items.rows) {
+      let loteId = null;
+      if (item.numero_lote) {
+        const lote = await client.query(
+          'INSERT INTO lotes (producto_id,numero_lote,fecha_vencimiento,cantidad_inicial,cantidad_actual) VALUES ($1,$2,$3,$4,$4) RETURNING id',
+          [item.producto_id, item.numero_lote, item.fecha_vencimiento || null, item.cantidad]
+        );
+        loteId = lote.rows[0].id;
+      }
+      await registrarMovimiento(client, {
+        producto_id: item.producto_id, lote_id: loteId, tipo: 'compra',
+        cantidad: item.cantidad, referencia_id: oc.rows[0].id, referencia_tipo: 'compra',
+        motivo: `Orden de compra #${oc.rows[0].id}`, usuario_id: req.session.usuario.id
+      });
+      await client.query('UPDATE productos SET precio_compra=$1 WHERE id=$2', [item.precio_unit, item.producto_id]);
+    }
+    await client.query("UPDATE ordenes_compra SET estado='recibida' WHERE id=$1", [req.params.id]);
+    await client.query('COMMIT');
+    res.json({ exito: true });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    res.json({ exito: false, mensaje: err.message });
+  } finally { client.release(); }
+});
+
+// ── API: Ventas ───────────────────────────────────────────────────────────────
+
+app.get('/api/ventas', requireAuth, requirePermiso('ventas'), async (req, res) => {
+  const { desde, hasta, estado, limit = 500 } = req.query;
+  const where = ['1=1'];
+  const params = [];
+  if (desde) { params.push(desde); where.push(`v.creado_en >= $${params.length}::date`); }
+  if (hasta) { params.push(hasta); where.push(`v.creado_en <= $${params.length}::date + 1`); }
+  if (estado) { params.push(estado); where.push(`v.estado = $${params.length}`); }
+  params.push(limit);
+  try {
+    const r = await pool.query(`
+      SELECT v.*, u.nombre AS cajero, c.nombre AS cliente
+      FROM ventas v
+      LEFT JOIN usuarios u ON v.usuario_id = u.id
+      LEFT JOIN clientes c ON v.cliente_id = c.id
+      WHERE ${where.join(' AND ')}
+      ORDER BY v.creado_en DESC LIMIT $${params.length}
+    `, params);
+    res.json(r.rows);
+  } catch (err) { res.status(500).json({ mensaje: err.message }); }
+});
+
+app.get('/api/ventas/:id', requireAuth, requirePermiso('ventas'), async (req, res) => {
+  try {
+    const v = await pool.query(`
+      SELECT v.*, u.nombre AS cajero, c.nombre AS cliente
+      FROM ventas v LEFT JOIN usuarios u ON v.usuario_id=u.id LEFT JOIN clientes c ON v.cliente_id=c.id
+      WHERE v.id=$1
+    `, [req.params.id]);
+    if (!v.rows.length) return res.status(404).json({ mensaje: 'Venta no encontrada' });
+    const items = await pool.query(`
+      SELECT dv.*, p.nombre AS producto, p.sku
+      FROM detalle_ventas dv JOIN productos p ON dv.producto_id=p.id
+      WHERE dv.venta_id=$1
+    `, [req.params.id]);
+    res.json({ ...v.rows[0], items: items.rows });
+  } catch (err) { res.status(500).json({ mensaje: err.message }); }
+});
+
+app.post('/api/ventas', requireAuth, requirePermiso('ventas'), async (req, res) => {
+  let { cliente_id, cliente_nombre, items, notas } = req.body;
+  if (!cliente_id && cliente_nombre) {
+    try {
+      const existe = await pool.query('SELECT id FROM clientes WHERE nombre=$1', [cliente_nombre]);
+      cliente_id = existe.rows.length ? existe.rows[0].id :
+        (await pool.query('INSERT INTO clientes (nombre) VALUES ($1) RETURNING id', [cliente_nombre])).rows[0].id;
+    } catch (_) {}
   }
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    let subtotal = 0, iva_total = 0;
+    const detalles = [];
+    for (const item of items) {
+      const r = await client.query('SELECT * FROM productos WHERE id=$1 AND activo=TRUE FOR UPDATE', [item.producto_id]);
+      const p = r.rows[0];
+      if (!p) throw new Error(`Producto ${item.producto_id} no encontrado`);
+      if (p.stock_actual < item.cantidad) throw new Error(`Stock insuficiente para "${p.nombre}"`);
+      const base = p.precio_venta * item.cantidad;
+      const iva = base * (p.iva_porcentaje / 100);
+      subtotal += base;
+      iva_total += iva;
+      detalles.push({ producto: p, cantidad: item.cantidad, lote_id: item.lote_id || null });
+    }
+    const venta = await client.query(
+      'INSERT INTO ventas (cliente_id,usuario_id,subtotal,iva_total,total,notas) VALUES ($1,$2,$3,$4,$5,$6) RETURNING id',
+      [cliente_id || null, req.session.usuario.id, subtotal, iva_total, subtotal + iva_total, notas || '']
+    );
+    const ventaId = venta.rows[0].id;
+    for (const d of detalles) {
+      await client.query(
+        'INSERT INTO detalle_ventas (venta_id,producto_id,lote_id,cantidad,precio_unit,iva_porcentaje) VALUES ($1,$2,$3,$4,$5,$6)',
+        [ventaId, d.producto.id, d.lote_id, d.cantidad, d.producto.precio_venta, d.producto.iva_porcentaje]
+      );
+      await registrarMovimiento(client, {
+        producto_id: d.producto.id, lote_id: d.lote_id, tipo: 'venta',
+        cantidad: -d.cantidad, referencia_id: ventaId, referencia_tipo: 'venta',
+        motivo: `Venta #${ventaId}`, usuario_id: req.session.usuario.id
+      });
+      if (d.lote_id) await client.query('UPDATE lotes SET cantidad_actual = cantidad_actual - $1 WHERE id=$2', [d.cantidad, d.lote_id]);
+    }
+    await client.query('COMMIT');
+    res.json({ exito: true, venta_id: ventaId, total: subtotal + iva_total });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    res.json({ exito: false, mensaje: err.message });
+  } finally { client.release(); }
 });
 
-// ── Admin — páginas ──────────────────────────────────────────────────────────
-
-app.get('/admin', requireAuth, requireAdmin, (req, res) => {
-  res.redirect('/admin/productos');
+app.put('/api/compras/:id/cancelar', requireAuth, requirePermiso('compras'), async (req, res) => {
+  try {
+    const r = await pool.query("UPDATE ordenes_compra SET estado='cancelada' WHERE id=$1 AND estado='borrador' RETURNING id", [req.params.id]);
+    if (!r.rows.length) return res.json({ exito: false, mensaje: 'Orden no encontrada o ya procesada' });
+    res.json({ exito: true });
+  } catch (err) { res.json({ exito: false, mensaje: err.message }); }
 });
 
-app.get('/admin/productos', requireAuth, requireAdmin, (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'admin-productos.html'));
+app.put('/api/ventas/:id/anular', requireAuth, requirePermiso('ventas'), async (req, res) => {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const v = await client.query("SELECT * FROM ventas WHERE id=$1 AND estado='completada'", [req.params.id]);
+    if (!v.rows.length) throw new Error('Venta no encontrada o ya anulada');
+    const items = await client.query('SELECT * FROM detalle_ventas WHERE venta_id=$1', [req.params.id]);
+    for (const item of items.rows) {
+      await registrarMovimiento(client, {
+        producto_id: item.producto_id, lote_id: item.lote_id, tipo: 'devolucion',
+        cantidad: item.cantidad, referencia_id: v.rows[0].id, referencia_tipo: 'anulacion',
+        motivo: `Anulación venta #${v.rows[0].id}`, usuario_id: req.session.usuario.id
+      });
+      if (item.lote_id) await client.query('UPDATE lotes SET cantidad_actual = cantidad_actual + $1 WHERE id=$2', [item.cantidad, item.lote_id]);
+    }
+    await client.query("UPDATE ventas SET estado='anulada' WHERE id=$1", [req.params.id]);
+    await client.query('COMMIT');
+    res.json({ exito: true });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    res.json({ exito: false, mensaje: err.message });
+  } finally { client.release(); }
 });
 
-app.get('/admin/stock', requireAuth, requireAdmin, (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'admin-stock.html'));
+// ── API: Reportes ─────────────────────────────────────────────────────────────
+
+app.get('/api/reportes/valoracion', requireAuth, requirePermiso('reportes'), async (_, res) => {
+  try {
+    const r = await pool.query(`
+      SELECT p.sku, p.nombre, p.stock_actual, p.precio_compra, p.precio_venta,
+             (p.stock_actual * p.precio_compra) AS valor_costo,
+             (p.stock_actual * p.precio_venta)  AS valor_venta,
+             c.nombre AS categoria
+      FROM productos p LEFT JOIN categorias c ON p.categoria_id=c.id
+      WHERE p.activo=TRUE ORDER BY valor_costo DESC
+    `);
+    res.json(r.rows);
+  } catch (err) { res.status(500).json({ mensaje: err.message }); }
 });
 
-// ── Admin — API productos ────────────────────────────────────────────────────
-
-app.get('/api/admin/productos', requireAuth, requireAdmin, async (req, res) => {
+app.get('/api/reportes/bajo-stock', requireAuth, requirePermiso('reportes'), async (_, res) => {
   try {
     const r = await pool.query(`
       SELECT p.*, c.nombre AS categoria
-      FROM productos p
-      LEFT JOIN categorias c ON p.categoria_id = c.id
-      ORDER BY p.nombre
+      FROM productos p LEFT JOIN categorias c ON p.categoria_id=c.id
+      WHERE p.activo=TRUE AND p.stock_actual <= p.punto_reorden
+      ORDER BY p.stock_actual ASC
     `);
     res.json(r.rows);
-  } catch (err) {
-    res.status(500).json({ mensaje: 'Error' });
-  }
+  } catch (err) { res.status(500).json({ mensaje: err.message }); }
 });
 
-app.post('/api/admin/productos', requireAuth, requireAdmin, async (req, res) => {
-  const { nombre, descripcion, precio, stock, imagen_url } = req.body;
-  try {
-    await pool.query(
-      'INSERT INTO productos (nombre, descripcion, precio, stock, imagen_url) VALUES ($1, $2, $3, $4, $5)',
-      [nombre, descripcion || '', precio, stock || 0, imagen_url || '']
-    );
-    res.json({ exito: true });
-  } catch (err) {
-    console.error(err);
-    res.json({ exito: false, mensaje: 'Error al crear producto' });
-  }
-});
-
-app.put('/api/admin/productos/:id', requireAuth, requireAdmin, async (req, res) => {
-  const { nombre, descripcion, precio, imagen_url, activo } = req.body;
-  try {
-    await pool.query(
-      'UPDATE productos SET nombre=$1, descripcion=$2, precio=$3, imagen_url=$4, activo=$5 WHERE id=$6',
-      [nombre, descripcion || '', precio, imagen_url || '', activo !== false, req.params.id]
-    );
-    res.json({ exito: true });
-  } catch (err) {
-    console.error(err);
-    res.json({ exito: false, mensaje: 'Error al actualizar' });
-  }
-});
-
-app.delete('/api/admin/productos/:id', requireAuth, requireAdmin, async (req, res) => {
-  try {
-    await pool.query('UPDATE productos SET activo = FALSE WHERE id = $1', [req.params.id]);
-    res.json({ exito: true });
-  } catch (err) {
-    res.json({ exito: false, mensaje: 'Error al eliminar' });
-  }
-});
-
-// ── Admin — API stock ────────────────────────────────────────────────────────
-
-app.post('/api/admin/stock', requireAuth, requireAdmin, async (req, res) => {
-  const { producto_id, tipo, cantidad, motivo } = req.body;
-  const client = await pool.connect();
-  try {
-    await client.query('BEGIN');
-    const delta = tipo === 'entrada' ? cantidad : -cantidad;
-    const r = await client.query('SELECT stock FROM productos WHERE id = $1 FOR UPDATE', [producto_id]);
-    if (!r.rows.length) throw new Error('Producto no encontrado');
-    const nuevoStock = r.rows[0].stock + delta;
-    if (nuevoStock < 0) throw new Error('Stock insuficiente para registrar salida');
-    await client.query('UPDATE productos SET stock = $1 WHERE id = $2', [nuevoStock, producto_id]);
-    await client.query(
-      'INSERT INTO movimientos_stock (producto_id, tipo, cantidad, motivo, usuario_id) VALUES ($1, $2, $3, $4, $5)',
-      [producto_id, tipo, cantidad, motivo || '', req.session.usuario.id]
-    );
-    await client.query('COMMIT');
-    res.json({ exito: true, nuevo_stock: nuevoStock });
-  } catch (err) {
-    await client.query('ROLLBACK');
-    res.json({ exito: false, mensaje: err.message });
-  } finally {
-    client.release();
-  }
-});
-
-app.get('/api/admin/stock/movimientos', requireAuth, requireAdmin, async (req, res) => {
+app.get('/api/reportes/vencimientos', requireAuth, requirePermisoOr('reportes', 'stock'), async (req, res) => {
+  const dias = parseInt(req.query.dias) || 30;
   try {
     const r = await pool.query(`
-      SELECT m.id, m.tipo, m.cantidad, m.motivo, m.creado_en,
-             p.nombre AS producto, u.nombre AS usuario
+      SELECT l.*, p.nombre AS producto, p.sku, p.precio_compra,
+             (l.fecha_vencimiento - CURRENT_DATE) AS dias_restantes
+      FROM lotes l JOIN productos p ON l.producto_id=p.id
+      WHERE l.activo=TRUE AND l.cantidad_actual > 0
+        AND l.fecha_vencimiento IS NOT NULL
+        AND l.fecha_vencimiento <= CURRENT_DATE + $1
+      ORDER BY l.fecha_vencimiento ASC
+    `, [dias]);
+    res.json(r.rows);
+  } catch (err) { res.status(500).json({ mensaje: err.message }); }
+});
+
+app.get('/api/reportes/movimientos', requireAuth, requirePermiso('reportes'), async (req, res) => {
+  const { desde, hasta } = req.query;
+  try {
+    const r = await pool.query(`
+      SELECT m.*, p.nombre AS producto, p.sku, u.nombre AS usuario
       FROM movimientos_stock m
-      JOIN productos p ON m.producto_id = p.id
-      JOIN usuarios u ON m.usuario_id = u.id
-      ORDER BY m.creado_en DESC
-      LIMIT 100
-    `);
+      JOIN productos p ON m.producto_id=p.id
+      LEFT JOIN usuarios u ON m.usuario_id=u.id
+      WHERE ($1::date IS NULL OR m.creado_en >= $1::date)
+        AND ($2::date IS NULL OR m.creado_en < $2::date + 1)
+      ORDER BY m.creado_en DESC LIMIT 1000
+    `, [desde || null, hasta || null]);
     res.json(r.rows);
-  } catch (err) {
-    res.status(500).json({ mensaje: 'Error' });
-  }
+  } catch (err) { res.status(500).json({ mensaje: err.message }); }
 });
 
-// ── Admin — API ventas ───────────────────────────────────────────────────────
-
-app.get('/api/admin/ventas', requireAuth, requireAdmin, async (req, res) => {
+app.get('/api/reportes/ranking', requireAuth, requirePermiso('reportes'), async (req, res) => {
+  const { desde, hasta } = req.query;
   try {
     const r = await pool.query(`
-      SELECT v.id, v.total, v.estado, v.creado_en, u.nombre AS cliente, u.email
-      FROM ventas v
-      JOIN usuarios u ON v.usuario_id = u.id
-      ORDER BY v.creado_en DESC
-    `);
+      SELECT p.nombre AS producto, p.sku,
+             SUM(dv.cantidad) AS total_cantidad,
+             SUM(dv.cantidad * dv.precio_unit) AS total_ingresos
+      FROM detalle_ventas dv
+      JOIN productos p ON dv.producto_id=p.id
+      JOIN ventas v ON dv.venta_id=v.id
+      WHERE v.estado='completada'
+        AND ($1::date IS NULL OR v.creado_en >= $1::date)
+        AND ($2::date IS NULL OR v.creado_en < $2::date + 1)
+      GROUP BY p.id, p.nombre, p.sku
+      ORDER BY total_cantidad DESC
+    `, [desde||null, hasta||null]);
     res.json(r.rows);
-  } catch (err) {
-    res.status(500).json({ mensaje: 'Error' });
-  }
+  } catch (err) { res.status(500).json({ mensaje: err.message }); }
 });
 
-// ── Iniciar servidor ─────────────────────────────────────────────────────────
+app.get('/api/reportes/ventas-productos', requireAuth, requirePermiso('reportes'), async (req, res) => {
+  const { desde, hasta } = req.query;
+  try {
+    const r = await pool.query(`
+      SELECT p.sku, p.nombre, SUM(dv.cantidad) AS total_vendido,
+             SUM(dv.cantidad * dv.precio_unit) AS total_ingresos
+      FROM detalle_ventas dv
+      JOIN productos p ON dv.producto_id=p.id
+      JOIN ventas v ON dv.venta_id=v.id
+      WHERE v.estado='completada'
+        AND ($1::date IS NULL OR v.creado_en >= $1::date)
+        AND ($2::date IS NULL OR v.creado_en < $2::date + 1)
+      GROUP BY p.id, p.sku, p.nombre
+      ORDER BY total_vendido DESC
+    `, [desde || null, hasta || null]);
+    res.json(r.rows);
+  } catch (err) { res.status(500).json({ mensaje: err.message }); }
+});
+
+// ── API: Usuarios y roles ─────────────────────────────────────────────────────
+
+app.get('/api/usuarios', requireAuth, requirePermiso('usuarios'), async (_, res) => {
+  try {
+    const r = await pool.query(`
+      SELECT u.id, u.nombre, u.email, u.creado_en, ro.nombre AS rol, ro.id AS rol_id
+      FROM usuarios u LEFT JOIN roles ro ON u.rol_id=ro.id ORDER BY u.nombre
+    `);
+    res.json(r.rows);
+  } catch (err) { res.status(500).json({ mensaje: err.message }); }
+});
+
+app.put('/api/usuarios/:id/rol', requireAuth, requirePermiso('usuarios'), async (req, res) => {
+  const { rol_id } = req.body;
+  try {
+    const rolTarget = await pool.query('SELECT nombre FROM roles WHERE id=$1', [rol_id]);
+    if (!rolTarget.rows.length) return res.json({ exito: false, mensaje: 'Rol no encontrado' });
+    const esAdmin = rolTarget.rows[0].nombre === 'administrador' || rolTarget.rows[0].nombre === 'superusuario';
+    if (esAdmin && !req.session.usuario.permisos.asignar_admin)
+      return res.json({ exito: false, mensaje: 'Solo el superusuario puede asignar roles de administrador' });
+    await pool.query('UPDATE usuarios SET rol_id=$1 WHERE id=$2', [rol_id, req.params.id]);
+    res.json({ exito: true });
+  } catch (err) { res.json({ exito: false, mensaje: err.message }); }
+});
+
+app.get('/api/roles', requireAuth, requirePermiso('roles'), async (_, res) => {
+  try { const r = await pool.query('SELECT * FROM roles ORDER BY nombre'); res.json(r.rows); }
+  catch (err) { res.status(500).json({ mensaje: err.message }); }
+});
+
+app.post('/api/roles', requireAuth, requirePermiso('roles'), async (req, res) => {
+  const { nombre, permisos } = req.body;
+  if (!req.session.usuario.permisos.asignar_admin) permisos.asignar_admin = false;
+  try {
+    const r = await pool.query('INSERT INTO roles (nombre,permisos) VALUES ($1,$2) RETURNING *', [nombre, JSON.stringify(permisos)]);
+    res.json({ exito: true, rol: r.rows[0] });
+  } catch (err) { res.json({ exito: false, mensaje: err.message }); }
+});
+
+app.put('/api/roles/:id', requireAuth, requirePermiso('roles'), async (req, res) => {
+  const { nombre, permisos } = req.body;
+  if (!req.session.usuario.permisos.asignar_admin) permisos.asignar_admin = false;
+  try {
+    const rolActual = await pool.query('SELECT es_sistema, nombre FROM roles WHERE id=$1', [req.params.id]);
+    if (rolActual.rows[0]?.es_sistema) return res.json({ exito: false, mensaje: 'No se pueden editar los roles del sistema' });
+    await pool.query('UPDATE roles SET nombre=$1, permisos=$2 WHERE id=$3', [nombre, JSON.stringify(permisos), req.params.id]);
+    res.json({ exito: true });
+  } catch (err) { res.json({ exito: false, mensaje: err.message }); }
+});
+
+// ── Dashboard KPIs ────────────────────────────────────────────────────────────
+
+app.get('/api/dashboard', requireAuth, async (_, res) => {
+  try {
+    const [prods, bajo, ventas, venc] = await Promise.all([
+      pool.query('SELECT COUNT(*) AS total, SUM(stock_actual * precio_compra) AS valoracion FROM productos WHERE activo=TRUE'),
+      pool.query('SELECT COUNT(*) AS total FROM productos WHERE activo=TRUE AND stock_actual <= punto_reorden'),
+      pool.query("SELECT COUNT(*) AS total, COALESCE(SUM(total),0) AS monto FROM ventas WHERE estado='completada' AND creado_en >= CURRENT_DATE - 30"),
+      pool.query("SELECT COUNT(*) AS total FROM lotes WHERE activo=TRUE AND cantidad_actual > 0 AND fecha_vencimiento IS NOT NULL AND fecha_vencimiento <= CURRENT_DATE + 30"),
+    ]);
+    res.json({
+      productos: prods.rows[0],
+      bajo_stock: bajo.rows[0],
+      ventas_mes: ventas.rows[0],
+      vencimientos: venc.rows[0],
+    });
+  } catch (err) { res.status(500).json({ mensaje: err.message }); }
+});
+
+// ── Inicio ────────────────────────────────────────────────────────────────────
 
 inicializarDB()
-  .then(() => {
-    app.listen(PORT, () => console.log(`Servidor corriendo en http://localhost:${PORT}`));
-  })
-  .catch((err) => {
-    console.error('Error al conectar la base de datos:', err);
-    process.exit(1);
-  });
+  .then(() => app.listen(PORT, () => console.log(`Servidor corriendo en http://localhost:${PORT}`)))
+  .catch(err => { console.error('Error DB:', err); process.exit(1); });

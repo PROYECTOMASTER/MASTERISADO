@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+  <title>Productos — MASTERISADO</title>
+  <script src="/admin/layout.js"></script>
+  <style id="base-css"></style>
+</head>
+<body>
+<header>
+  <h1>MASTERISADO</h1>
+  <div class="header-right">
+    <span id="usuario-nombre"></span>
+    <form action="/logout" method="POST" style="margin:0"><button type="submit" class="btn-logout">Salir</button></form>
+  </div>
+</header>
+<nav id="nav-links"></nav>
+
+<main>
+  <div class="top-bar">
+    <h2 style="font-size:16px;color:#1a1a2e">📦 Catálogo de Productos</h2>
+    <div style="display:flex;gap:10px;flex-wrap:wrap">
+      <input class="search" id="buscador" placeholder="Buscar por nombre, SKU..." oninput="filtrar()"/>
+      <button class="btn btn-success" onclick="abrirModalNuevo()">+ Nuevo producto</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="tabla-wrap">
+      <table>
+        <thead><tr>
+          <th>SKU</th><th>Producto</th><th>Categoría</th><th>P. Compra</th>
+          <th>P. Venta</th><th>IVA</th><th>Stock</th><th>Mín.</th><th>Estado</th><th>Acciones</th>
+        </tr></thead>
+        <tbody id="tabla-body"><tr><td colspan="10" style="text-align:center;color:#aaa;padding:30px">Cargando...</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+</main>
+
+<!-- Modal nuevo/editar -->
+<div class="modal-overlay" id="modal">
+  <div class="modal">
+    <div class="modal-title" id="modal-titulo">Nuevo producto</div>
+    <input type="hidden" id="f-id"/>
+    <div class="form-row">
+      <div class="campo"><label>SKU *</label><input id="f-sku" placeholder="PROD-001" required/></div>
+      <div class="campo"><label>Código de barras</label><input id="f-barras" placeholder="EAN/UPC"/></div>
+    </div>
+    <div class="form-row full"><div class="campo"><label>Nombre *</label><input id="f-nombre" required/></div></div>
+    <div class="form-row full"><div class="campo"><label>Descripción</label><textarea id="f-desc" rows="2"></textarea></div></div>
+    <div class="form-row">
+      <div class="campo"><label>Categoría</label><select id="f-cat"><option value="">Sin categoría</option></select></div>
+      <div class="campo"><label>Marca</label><select id="f-marca"><option value="">Sin marca</option></select></div>
+      <div class="campo"><label>Unidad</label><select id="f-unidad"><option value="">Seleccionar</option></select></div>
+    </div>
+    <div class="form-row">
+      <div class="campo"><label>Precio compra *</label><input type="number" id="f-pcompra" min="0" step="0.01"/></div>
+      <div class="campo"><label>Precio venta *</label><input type="number" id="f-pventa" min="0" step="0.01"/></div>
+      <div class="campo"><label>IVA (%)</label>
+        <select id="f-iva"><option value="0">0%</option><option value="5">5%</option><option value="19" selected>19%</option></select>
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="campo"><label>Stock mínimo</label><input type="number" id="f-stmin" min="0" value="0"/></div>
+      <div class="campo"><label>Punto reorden</label><input type="number" id="f-reorden" min="0" value="0"/></div>
+      <div class="campo"><label>Ubicación</label><input id="f-ubic" placeholder="Ej: Bodega A - Estante 3"/></div>
+    </div>
+    <div class="form-row full"><div class="campo"><label>URL imagen</label><input id="f-img" placeholder="https://..."/></div></div>
+    <div class="campo" id="campo-activo" style="display:none;margin-top:8px">
+      <label>Estado</label>
+      <select id="f-activo"><option value="true">Activo</option><option value="false">Inactivo</option></select>
+    </div>
+    <div class="modal-footer">
+      <button class="btn" style="background:#eee;color:#555" onclick="cerrarModal()">Cancelar</button>
+      <button class="btn btn-success" onclick="guardar()">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<script>
+document.getElementById('base-css').textContent = CSS_BASE;
+let productos = [], sesion = null;
+
+async function init() {
+  sesion = await cargarSesion();
+  if (!sesion) return;
+  renderNav('/admin/productos', sesion);
+  await Promise.all([cargarCatalogos(), cargarProductos()]);
+}
+
+async function cargarCatalogos() {
+  const [cats, marcas, unidades] = await Promise.all([
+    fetch('/api/categorias').then(r=>r.json()),
+    fetch('/api/marcas').then(r=>r.json()),
+    fetch('/api/unidades').then(r=>r.json()),
+  ]);
+  const selCat = document.getElementById('f-cat');
+  cats.forEach(c => selCat.innerHTML += `<option value="${c.id}">${c.nombre}</option>`);
+  const selMarca = document.getElementById('f-marca');
+  marcas.forEach(m => selMarca.innerHTML += `<option value="${m.id}">${m.nombre}</option>`);
+  const selUnd = document.getElementById('f-unidad');
+  unidades.forEach(u => selUnd.innerHTML += `<option value="${u.id}">${u.nombre} (${u.simbolo})</option>`);
+}
+
+async function cargarProductos() {
+  const r = await fetch('/api/productos');
+  productos = await r.json();
+  renderTabla(productos);
+}
+
+function renderTabla(lista) {
+  const tbody = document.getElementById('tabla-body');
+  if (!lista.length) { tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;color:#aaa;padding:30px">Sin productos</td></tr>'; return; }
+  tbody.innerHTML = lista.map(p => `<tr>
+    <td><code style="font-size:11px;color:#4A90D9">${p.sku}</code></td>
+    <td><strong>${p.nombre}</strong>${p.descripcion?`<br><span style="font-size:11px;color:#888">${p.descripcion.substring(0,50)}...</span>`:''}</td>
+    <td>${p.categoria||'—'}</td>
+    <td>${fmtMoneda(p.precio_compra)}</td>
+    <td><strong>${fmtMoneda(p.precio_venta)}</strong></td>
+    <td>${p.iva_porcentaje}%</td>
+    <td class="${p.stock_actual<=p.stock_minimo&&p.stock_actual>0?'':''}">
+      <span style="font-weight:700;color:${p.stock_actual===0?'#e74c3c':p.stock_actual<=p.stock_minimo?'#f39c12':'#27AE60'}">${p.stock_actual}</span>
+    </td>
+    <td>${p.stock_minimo}</td>
+    <td>${badge(p.activo?'Activo':'Inactivo',p.activo?'verde':'rojo')}</td>
+    <td><div class="acciones">
+      <button class="btn btn-warning btn-sm" onclick='abrirEditar(${JSON.stringify(p)})'>Editar</button>
+    </div></td>
+  </tr>`).join('');
+}
+
+function filtrar() {
+  const q = document.getElementById('buscador').value.toLowerCase();
+  renderTabla(productos.filter(p => p.nombre.toLowerCase().includes(q) || p.sku.toLowerCase().includes(q)));
+}
+
+function abrirModalNuevo() {
+  document.getElementById('modal-titulo').textContent = 'Nuevo producto';
+  document.getElementById('f-id').value = '';
+  ['f-sku','f-barras','f-nombre','f-desc','f-ubic','f-img'].forEach(id => document.getElementById(id).value = '');
+  ['f-pcompra','f-pventa'].forEach(id => document.getElementById(id).value = '0');
+  document.getElementById('f-stmin').value = '0';
+  document.getElementById('f-reorden').value = '0';
+  document.getElementById('f-iva').value = '19';
+  document.getElementById('f-cat').value = '';
+  document.getElementById('f-marca').value = '';
+  document.getElementById('f-unidad').value = '';
+  document.getElementById('campo-activo').style.display = 'none';
+  document.getElementById('modal').classList.add('open');
+}
+
+function abrirEditar(p) {
+  document.getElementById('modal-titulo').textContent = 'Editar producto';
+  document.getElementById('f-id').value = p.id;
+  document.getElementById('f-sku').value = p.sku;
+  document.getElementById('f-barras').value = p.codigo_barras || '';
+  document.getElementById('f-nombre').value = p.nombre;
+  document.getElementById('f-desc').value = p.descripcion || '';
+  document.getElementById('f-pcompra').value = p.precio_compra;
+  document.getElementById('f-pventa').value = p.precio_venta;
+  document.getElementById('f-iva').value = p.iva_porcentaje;
+  document.getElementById('f-stmin').value = p.stock_minimo;
+  document.getElementById('f-reorden').value = p.punto_reorden;
+  document.getElementById('f-ubic').value = p.ubicacion || '';
+  document.getElementById('f-img').value = p.imagen_url || '';
+  document.getElementById('f-cat').value = p.categoria_id || '';
+  document.getElementById('f-marca').value = p.marca_id || '';
+  document.getElementById('f-unidad').value = p.unidad_id || '';
+  document.getElementById('f-activo').value = p.activo ? 'true' : 'false';
+  document.getElementById('campo-activo').style.display = 'block';
+  document.getElementById('modal').classList.add('open');
+}
+
+function cerrarModal() { document.getElementById('modal').classList.remove('open'); }
+
+async function guardar() {
+  const id = document.getElementById('f-id').value;
+  const body = {
+    sku: document.getElementById('f-sku').value,
+    codigo_barras: document.getElementById('f-barras').value,
+    nombre: document.getElementById('f-nombre').value,
+    descripcion: document.getElementById('f-desc').value,
+    categoria_id: document.getElementById('f-cat').value || null,
+    marca_id: document.getElementById('f-marca').value || null,
+    unidad_id: document.getElementById('f-unidad').value || null,
+    precio_compra: document.getElementById('f-pcompra').value,
+    precio_venta: document.getElementById('f-pventa').value,
+    iva_porcentaje: document.getElementById('f-iva').value,
+    stock_minimo: document.getElementById('f-stmin').value,
+    punto_reorden: document.getElementById('f-reorden').value,
+    ubicacion: document.getElementById('f-ubic').value,
+    imagen_url: document.getElementById('f-img').value,
+    activo: id ? document.getElementById('f-activo').value === 'true' : true,
+  };
+  const url = id ? `/api/productos/${id}` : '/api/productos';
+  const method = id ? 'PUT' : 'POST';
+  const r = await fetch(url, { method, headers: {'Content-Type':'application/json'}, body: JSON.stringify(body) });
+  const data = await r.json();
+  if (data.exito !== false) { cerrarModal(); toast('Producto guardado'); cargarProductos(); }
+  else toast(data.mensaje || 'Error', 'err');
+}
+
+init();
+</script>
+</body>
+</html>
