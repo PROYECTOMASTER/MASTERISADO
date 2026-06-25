@@ -228,6 +228,20 @@ app.post('/api/marcas',        requireAuth, requirePermiso('productos'), async (
   catch (err) { res.json({ exito: false, mensaje: errMsg(err) }); }
 });
 
+app.delete('/api/categorias/:id', requireAuth, requirePermiso('productos'), async (req, res) => {
+  const uso = await pool.query('SELECT 1 FROM productos WHERE categoria_id=$1 LIMIT 1', [req.params.id]);
+  if (uso.rows.length) return res.json({ exito: false, mensaje: 'No se puede eliminar: hay productos usando esta categoría' });
+  try { await pool.query('DELETE FROM categorias WHERE id=$1', [req.params.id]); res.json({ exito: true }); }
+  catch (err) { res.json({ exito: false, mensaje: errMsg(err) }); }
+});
+
+app.delete('/api/marcas/:id', requireAuth, requirePermiso('productos'), async (req, res) => {
+  const uso = await pool.query('SELECT 1 FROM productos WHERE marca_id=$1 LIMIT 1', [req.params.id]);
+  if (uso.rows.length) return res.json({ exito: false, mensaje: 'No se puede eliminar: hay productos usando esta marca' });
+  try { await pool.query('DELETE FROM marcas WHERE id=$1', [req.params.id]); res.json({ exito: true }); }
+  catch (err) { res.json({ exito: false, mensaje: errMsg(err) }); }
+});
+
 app.get('/api/unidades',       async (_, res) => { const r = await pool.query('SELECT * FROM unidades_medida ORDER BY nombre'); res.json(r.rows); });
 app.post('/api/unidades',      requireAuth, requirePermiso('productos'), async (req, res) => {
   const { nombre, simbolo } = req.body;
@@ -236,6 +250,18 @@ app.post('/api/unidades',      requireAuth, requirePermiso('productos'), async (
   try { const r = await pool.query('INSERT INTO unidades_medida (nombre, simbolo) VALUES ($1,$2) RETURNING *', [nombre.trim(), simbolo.trim()]); res.json(r.rows[0]); }
   catch (err) { res.json({ exito: false, mensaje: errMsg(err) }); }
 });
+app.delete('/api/unidades/:id', requireAuth, requirePermiso('productos'), async (req, res) => {
+  const uso = await pool.query('SELECT 1 FROM productos WHERE unidad_id=$1 LIMIT 1', [req.params.id]);
+  if (uso.rows.length) return res.json({ exito: false, mensaje: 'No se puede eliminar: hay productos usando esta unidad' });
+  try { await pool.query('DELETE FROM unidades_medida WHERE id=$1', [req.params.id]); res.json({ exito: true }); }
+  catch (err) { res.json({ exito: false, mensaje: errMsg(err) }); }
+});
+
+app.delete('/api/productos/:id', requireAuth, requirePermiso('productos'), async (req, res) => {
+  try { await pool.query('DELETE FROM productos WHERE id=$1', [req.params.id]); res.json({ exito: true }); }
+  catch (err) { res.json({ exito: false, mensaje: 'No se puede eliminar: el producto tiene movimientos registrados' }); }
+});
+
 app.get('/api/proveedores',    requireAuth, requirePermiso('compras'), async (_, res) => { const r = await pool.query("SELECT * FROM proveedores ORDER BY nombre"); res.json(r.rows); });
 app.post('/api/proveedores',   requireAuth, requirePermiso('compras'), async (req, res) => {
   const { nombre, nit, telefono, email, direccion } = req.body;
@@ -858,7 +884,13 @@ app.post('/api/contabilidad/cuentas', requireAuth, requirePermiso('contabilidad'
       [codigo.trim(), nombre.trim(), tipo, naturaleza, parseInt(nivel)||3]
     );
     res.json({ exito: true, cuenta: r.rows[0] });
-  } catch (err) { res.json({ exito: false, mensaje: err.message }); }
+  } catch (err) { res.json({ exito: false, mensaje: errMsg(err) }); }
+});
+app.delete('/api/contabilidad/cuentas/:id', requireAuth, requirePermiso('contabilidad'), async (req, res) => {
+  const uso = await pool.query('SELECT 1 FROM lineas_asiento WHERE cuenta_id=$1 LIMIT 1', [req.params.id]);
+  if (uso.rows.length) return res.json({ exito: false, mensaje: 'No se puede eliminar: la cuenta tiene movimientos registrados' });
+  try { await pool.query('DELETE FROM cuentas_contables WHERE id=$1', [req.params.id]); res.json({ exito: true }); }
+  catch (err) { res.json({ exito: false, mensaje: errMsg(err) }); }
 });
 
 app.get('/api/contabilidad/asientos', requireAuth, requirePermiso('contabilidad'), async (req, res) => {

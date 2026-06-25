@@ -182,13 +182,23 @@ async function inicializarDB() {
       ON CONFLICT (nombre) DO NOTHING;
     `);
 
+    // Migración: eliminar duplicados en unidades_medida y agregar restricción única
+    await client.query(`
+      DELETE FROM unidades_medida a USING unidades_medida b
+      WHERE a.id > b.id AND a.nombre = b.nombre;
+    `);
+    await client.query(`
+      ALTER TABLE unidades_medida DROP CONSTRAINT IF EXISTS unidades_medida_nombre_unique;
+      ALTER TABLE unidades_medida ADD CONSTRAINT unidades_medida_nombre_unique UNIQUE (nombre);
+    `);
+
     // Sembrar unidades básicas
     await client.query(`
       INSERT INTO unidades_medida (nombre, simbolo) VALUES
         ('Unidad','und'),('Kilogramo','kg'),('Gramo','g'),
         ('Litro','L'),('Mililitro','mL'),('Caja','caja'),
         ('Paquete','paq'),('Docena','doc')
-      ON CONFLICT DO NOTHING;
+      ON CONFLICT (nombre) DO NOTHING;
     `);
 
     // Migración: campos de clientes

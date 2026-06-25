@@ -99,7 +99,7 @@
       </div>
       <div class="tabla-wrap">
         <table>
-          <thead><tr><th>Código</th><th>Nombre</th><th>Tipo</th><th>Naturaleza</th><th>Nivel</th></tr></thead>
+          <thead><tr><th>Código</th><th>Nombre</th><th>Tipo</th><th>Naturaleza</th><th>Nivel</th><th></th></tr></thead>
           <tbody id="tabla-cuentas"></tbody>
         </table>
       </div>
@@ -373,7 +373,7 @@ async function cargarCuentas() {
 
 function renderCuentas(lista) {
   const tbody = document.getElementById('tabla-cuentas');
-  if (!lista.length) { tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:#aaa;padding:24px">Sin cuentas</td></tr>'; return; }
+  if (!lista.length) { tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#aaa;padding:24px">Sin cuentas</td></tr>'; return; }
   tbody.innerHTML = lista.map(c => {
     const indent = (c.nivel - 1) * 16;
     const chip = `<span class="tipo-chip chip-${c.tipo}">${c.tipo}</span>`;
@@ -384,8 +384,17 @@ function renderCuentas(lista) {
       <td>${chip}</td>
       <td style="font-size:12px;color:#666">${c.naturaleza}</td>
       <td style="font-size:12px;color:#888">${c.nivel}</td>
+      <td><button class="btn btn-danger btn-sm" onclick="eliminarCuenta(${c.id},'${c.codigo} — ${c.nombre.replace(/'/g,"\\'")}')">Eliminar</button></td>
     </tr>`;
   }).join('');
+}
+
+async function eliminarCuenta(id, nombre) {
+  if (!confirmar(`¿Eliminar la cuenta "${nombre}"?`)) return;
+  const r = await fetch(`/api/contabilidad/cuentas/${id}`, { method:'DELETE' });
+  const data = await r.json();
+  if (data.exito) { toast('Cuenta eliminada'); cargarCuentas(); }
+  else toast(data.mensaje || 'No se pudo eliminar', 'err');
 }
 
 function filtrarCuentas() {

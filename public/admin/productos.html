@@ -10,12 +10,18 @@
     .sel-wrap select { flex:1; min-width:0; }
     .btn-plus { width:30px; height:34px; border:none; border-radius:7px; background:#4A90D9; color:white; font-size:18px; line-height:1; cursor:pointer; flex-shrink:0; font-weight:700; }
     .btn-plus:hover { background:#357abd; }
-    .mini-form { display:none; margin-top:6px; }
-    .mini-form.open { display:flex; gap:5px; align-items:center; flex-wrap:wrap; }
-    .mini-form input { flex:1; min-width:80px; padding:6px 9px; border:1.5px solid #4A90D9; border-radius:6px; font-size:12px; }
-    .mini-form input.mini-sm { flex:0 0 70px; }
-    .btn-mini-ok { padding:5px 10px; border:none; border-radius:6px; background:#27AE60; color:white; font-size:13px; cursor:pointer; font-weight:700; }
-    .btn-mini-x  { padding:5px 10px; border:none; border-radius:6px; background:#eee; color:#555; font-size:13px; cursor:pointer; font-weight:700; }
+    .mini-panel { display:none; margin-top:6px; border:1.5px solid #4A90D9; border-radius:8px; padding:8px; background:#f8fbff; }
+    .mini-panel.open { display:block; }
+    .mini-lista { max-height:120px; overflow-y:auto; margin-bottom:8px; }
+    .mini-item { display:flex; justify-content:space-between; align-items:center; padding:4px 6px; font-size:12px; border-bottom:1px solid #eee; }
+    .mini-item:hover { background:#eef4ff; }
+    .mini-item span { flex:1; }
+    .btn-del-item { background:none; border:none; color:#e74c3c; cursor:pointer; font-size:14px; padding:0 4px; font-weight:700; }
+    .mini-add-row { display:flex; gap:5px; align-items:center; margin-top:4px; }
+    .mini-add-row input { flex:1; min-width:60px; padding:5px 8px; border:1.5px solid #d0d5dd; border-radius:6px; font-size:12px; }
+    .mini-add-row input.mini-sm { flex:0 0 65px; }
+    .btn-mini-ok { padding:5px 10px; border:none; border-radius:6px; background:#27AE60; color:white; font-size:12px; cursor:pointer; font-weight:700; }
+    .btn-mini-x  { padding:5px 10px; border:none; border-radius:6px; background:#ddd; color:#555; font-size:12px; cursor:pointer; font-weight:700; }
   </style>
 </head>
 <body>
@@ -66,37 +72,46 @@
         <label>Categoría</label>
         <div class="sel-wrap">
           <select id="f-cat"><option value="">Sin categoría</option></select>
-          <button class="btn-plus" title="Nueva categoría" onclick="toggleCrear('cat')">+</button>
+          <button class="btn-plus" title="Gestionar categorías" onclick="toggleCrear('cat')">⚙</button>
         </div>
-        <div class="mini-form" id="mf-cat">
-          <input id="mf-cat-nombre" placeholder="Nombre de categoría"/>
-          <button class="btn-mini-ok" onclick="crearCatalogo('cat')">✓</button>
-          <button class="btn-mini-x"  onclick="cerrarCrear('cat')">✕</button>
+        <div class="mini-panel" id="mf-cat">
+          <div class="mini-lista" id="mf-cat-lista"></div>
+          <div class="mini-add-row">
+            <input id="mf-cat-nombre" placeholder="Nueva categoría"/>
+            <button class="btn-mini-ok" onclick="crearCatalogo('cat')">+ Agregar</button>
+            <button class="btn-mini-x"  onclick="cerrarCrear('cat')">✕</button>
+          </div>
         </div>
       </div>
       <div class="campo">
         <label>Marca</label>
         <div class="sel-wrap">
           <select id="f-marca"><option value="">Sin marca</option></select>
-          <button class="btn-plus" title="Nueva marca" onclick="toggleCrear('marca')">+</button>
+          <button class="btn-plus" title="Gestionar marcas" onclick="toggleCrear('marca')">⚙</button>
         </div>
-        <div class="mini-form" id="mf-marca">
-          <input id="mf-marca-nombre" placeholder="Nombre de marca"/>
-          <button class="btn-mini-ok" onclick="crearCatalogo('marca')">✓</button>
-          <button class="btn-mini-x"  onclick="cerrarCrear('marca')">✕</button>
+        <div class="mini-panel" id="mf-marca">
+          <div class="mini-lista" id="mf-marca-lista"></div>
+          <div class="mini-add-row">
+            <input id="mf-marca-nombre" placeholder="Nueva marca"/>
+            <button class="btn-mini-ok" onclick="crearCatalogo('marca')">+ Agregar</button>
+            <button class="btn-mini-x"  onclick="cerrarCrear('marca')">✕</button>
+          </div>
         </div>
       </div>
       <div class="campo">
         <label>Unidad</label>
         <div class="sel-wrap">
           <select id="f-unidad"><option value="">Seleccionar</option></select>
-          <button class="btn-plus" title="Nueva unidad" onclick="toggleCrear('und')">+</button>
+          <button class="btn-plus" title="Gestionar unidades" onclick="toggleCrear('und')">⚙</button>
         </div>
-        <div class="mini-form" id="mf-und">
-          <input id="mf-und-nombre" placeholder="Nombre (ej: Kilogramo)"/>
-          <input id="mf-und-simbolo" placeholder="Símbolo" class="mini-sm"/>
-          <button class="btn-mini-ok" onclick="crearCatalogo('und')">✓</button>
-          <button class="btn-mini-x"  onclick="cerrarCrear('und')">✕</button>
+        <div class="mini-panel" id="mf-und">
+          <div class="mini-lista" id="mf-und-lista"></div>
+          <div class="mini-add-row">
+            <input id="mf-und-nombre" placeholder="Nombre (ej: Caja)"/>
+            <input id="mf-und-simbolo" placeholder="Símbolo" class="mini-sm"/>
+            <button class="btn-mini-ok" onclick="crearCatalogo('und')">+ Agregar</button>
+            <button class="btn-mini-x"  onclick="cerrarCrear('und')">✕</button>
+          </div>
         </div>
       </div>
     </div>
@@ -141,11 +156,17 @@ async function cargarCatalogos() {
     fetch('/api/marcas').then(r=>r.json()),
     fetch('/api/unidades').then(r=>r.json()),
   ]);
+  CATALOGO.cat.lista   = cats;
+  CATALOGO.marca.lista = marcas;
+  CATALOGO.und.lista   = unidades;
   const selCat = document.getElementById('f-cat');
+  selCat.innerHTML = '<option value="">Sin categoría</option>';
   cats.forEach(c => selCat.innerHTML += `<option value="${c.id}">${c.nombre}</option>`);
   const selMarca = document.getElementById('f-marca');
+  selMarca.innerHTML = '<option value="">Sin marca</option>';
   marcas.forEach(m => selMarca.innerHTML += `<option value="${m.id}">${m.nombre}</option>`);
   const selUnd = document.getElementById('f-unidad');
+  selUnd.innerHTML = '<option value="">Seleccionar</option>';
   unidades.forEach(u => selUnd.innerHTML += `<option value="${u.id}">${u.nombre} (${u.simbolo})</option>`);
 }
 
@@ -172,6 +193,7 @@ function renderTabla(lista) {
     <td>${badge(p.activo?'Activo':'Inactivo',p.activo?'verde':'rojo')}</td>
     <td><div class="acciones">
       <button class="btn btn-warning btn-sm" onclick='abrirEditar(${JSON.stringify(p)})'>Editar</button>
+      <button class="btn btn-danger btn-sm" onclick="eliminarProducto(${p.id},'${p.nombre.replace(/'/g,"\\'")}')">Eliminar</button>
     </div></td>
   </tr>`).join('');
 }
@@ -223,12 +245,24 @@ function cerrarModal() {
   ['cat','marca','und'].forEach(cerrarCrear);
 }
 
-// ── Creación inline de catálogos ────────────────────────────────────────────
+// ── Gestión inline de catálogos ─────────────────────────────────────────────
 const CATALOGO = {
-  cat:   { url: '/api/categorias', campos: ['nombre'],          select: 'f-cat',   label: c => c.nombre,              prefijo: 'mf-cat' },
-  marca: { url: '/api/marcas',     campos: ['nombre'],          select: 'f-marca', label: m => m.nombre,              prefijo: 'mf-marca' },
-  und:   { url: '/api/unidades',   campos: ['nombre','simbolo'],select: 'f-unidad',label: u => `${u.nombre} (${u.simbolo})`, prefijo: 'mf-und' },
+  cat:   { url: '/api/categorias', campos: ['nombre'],           select: 'f-cat',   label: c => c.nombre,                    prefijo: 'mf-cat',   lista: [] },
+  marca: { url: '/api/marcas',     campos: ['nombre'],           select: 'f-marca', label: m => m.nombre,                    prefijo: 'mf-marca', lista: [] },
+  und:   { url: '/api/unidades',   campos: ['nombre','simbolo'], select: 'f-unidad',label: u => `${u.nombre} (${u.simbolo})`,prefijo: 'mf-und',   lista: [] },
 };
+
+function renderMiniLista(tipo) {
+  const cfg = CATALOGO[tipo];
+  const contenedor = document.getElementById(`${cfg.prefijo}-lista`);
+  if (!contenedor) return;
+  if (!cfg.lista.length) { contenedor.innerHTML = '<div style="font-size:11px;color:#aaa;padding:4px 6px">Sin elementos</div>'; return; }
+  contenedor.innerHTML = cfg.lista.map(item => `
+    <div class="mini-item">
+      <span>${cfg.label(item)}</span>
+      <button class="btn-del-item" title="Eliminar" onclick="eliminarCatalogo('${tipo}',${item.id},'${cfg.label(item).replace(/'/g,"\\'")}')">✕</button>
+    </div>`).join('');
+}
 
 function toggleCrear(tipo) {
   const mf = document.getElementById(`mf-${tipo}`);
@@ -236,6 +270,7 @@ function toggleCrear(tipo) {
   ['cat','marca','und'].forEach(cerrarCrear);
   if (!yaAbierto) {
     mf.classList.add('open');
+    renderMiniLista(tipo);
     document.getElementById(`${CATALOGO[tipo].prefijo}-nombre`)?.focus();
   }
 }
@@ -255,21 +290,45 @@ async function crearCatalogo(tipo) {
   const body = {};
   for (const campo of cfg.campos) {
     const val = document.getElementById(`${cfg.prefijo}-${campo}`)?.value.trim();
-    if (!val) { toast(`El campo "${campo}" es requerido`, 'err'); return; }
+    if (!val) { toast(`El campo "${campo === 'simbolo' ? 'símbolo' : campo}" es requerido`, 'err'); return; }
     body[campo] = val;
   }
   const r = await fetch(cfg.url, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body) });
   const data = await r.json();
   if (data.exito === false || data.error) { toast(data.mensaje || data.error || 'Error al guardar', 'err'); return; }
-  // Añadir al select y auto-seleccionar
+  cfg.lista.push(data);
+  cfg.lista.sort((a,b) => cfg.label(a).localeCompare(cfg.label(b)));
   const sel = document.getElementById(cfg.select);
   const opt = document.createElement('option');
-  opt.value = data.id;
-  opt.textContent = cfg.label(data);
+  opt.value = data.id; opt.textContent = cfg.label(data);
   sel.appendChild(opt);
   sel.value = data.id;
-  cerrarCrear(tipo);
-  toast(`${cfg.label(data)} creado/a correctamente`);
+  cfg.campos.forEach(c => { const el = document.getElementById(`${cfg.prefijo}-${c}`); if (el) el.value = ''; });
+  renderMiniLista(tipo);
+  toast(`${cfg.label(data)} agregado/a`);
+}
+
+async function eliminarCatalogo(tipo, id, nombre) {
+  if (!confirmar(`¿Eliminar "${nombre}"?`)) return;
+  const cfg = CATALOGO[tipo];
+  const r = await fetch(`${cfg.url}/${id}`, { method:'DELETE' });
+  const data = await r.json();
+  if (!data.exito) { toast(data.mensaje || 'No se pudo eliminar', 'err'); return; }
+  cfg.lista = cfg.lista.filter(i => i.id !== id);
+  const sel = document.getElementById(cfg.select);
+  const opt = sel.querySelector(`option[value="${id}"]`);
+  if (opt) opt.remove();
+  if (sel.value == id) sel.value = '';
+  renderMiniLista(tipo);
+  toast(`"${nombre}" eliminado/a`);
+}
+
+async function eliminarProducto(id, nombre) {
+  if (!confirmar(`¿Eliminar el producto "${nombre}"? Esta acción no se puede deshacer.`)) return;
+  const r = await fetch(`/api/productos/${id}`, { method:'DELETE' });
+  const data = await r.json();
+  if (data.exito) { toast('Producto eliminado'); cargarProductos(); }
+  else toast(data.mensaje || 'No se pudo eliminar', 'err');
 }
 
 async function guardar() {
