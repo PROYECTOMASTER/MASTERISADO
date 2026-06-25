@@ -1,0 +1,842 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+  <title>Contabilidad — MASTERISADO</title>
+  <script src="/admin/layout.js"></script>
+  <style id="base-css"></style>
+  <style>
+    .tabs { display:flex; gap:4px; margin-bottom:20px; border-bottom:2px solid #e8eaf0; flex-wrap:wrap; }
+    .tab { padding:10px 16px; cursor:pointer; font-size:12px; font-weight:600; color:#888; border-bottom:3px solid transparent; margin-bottom:-2px; white-space:nowrap; }
+    .tab.active { color:#4A90D9; border-bottom-color:#4A90D9; }
+    .tab-content { display:none; } .tab-content.active { display:block; }
+    .filtros { display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:16px; }
+    .filtros input[type=date], .filtros select { padding:7px 10px; border:1.5px solid #d0d5dd; border-radius:7px; font-size:12px; }
+
+    /* Plan de cuentas */
+    .tipo-chip { display:inline-block; padding:2px 8px; border-radius:12px; font-size:10px; font-weight:700; }
+    .chip-activo     { background:#e8f2ff; color:#4A90D9; }
+    .chip-pasivo     { background:#fde8e8; color:#e74c3c; }
+    .chip-patrimonio { background:#e8f8ee; color:#27AE60; }
+    .chip-ingreso    { background:#e8f8ee; color:#27AE60; }
+    .chip-costo      { background:#fff3e0; color:#f39c12; }
+    .chip-gasto      { background:#fde8e8; color:#e74c3c; }
+
+    /* Asiento */
+    .lineas-tabla { width:100%; border-collapse:collapse; margin-top:10px; font-size:13px; }
+    .lineas-tabla th { background:#f5f6fa; color:#555; font-weight:600; padding:8px 10px; text-align:left; }
+    .lineas-tabla td { padding:6px 6px; border-bottom:1px solid #f0f0f5; vertical-align:middle; }
+    .lineas-tabla input, .lineas-tabla select { width:100%; padding:6px 8px; border:1.5px solid #d0d5dd; border-radius:6px; font-size:12px; }
+    .lineas-tabla input[type=number] { text-align:right; }
+    .cuadre-bar { display:flex; gap:16px; align-items:center; padding:10px 14px; border-radius:8px; font-size:13px; font-weight:600; }
+    .cuadre-ok  { background:#e8f8ee; color:#27AE60; }
+    .cuadre-err { background:#fde8e8; color:#e74c3c; }
+
+    /* Estados financieros */
+    .ef-section { margin-bottom:20px; }
+    .ef-titulo  { font-size:13px; font-weight:700; color:#1a1a2e; background:#f5f6fa; padding:8px 12px; border-radius:6px; margin-bottom:6px; text-transform:uppercase; letter-spacing:.5px; }
+    .ef-grupo   { font-size:12px; font-weight:700; color:#555; padding:5px 12px 3px 24px; }
+    .ef-row     { display:flex; justify-content:space-between; align-items:center; padding:4px 12px 4px 36px; font-size:13px; color:#444; border-bottom:1px solid #f8f8f8; }
+    .ef-row:hover { background:#fafbff; }
+    .ef-subtotal { display:flex; justify-content:space-between; padding:6px 12px; font-size:13px; font-weight:700; color:#333; border-top:1px solid #ddd; margin-top:4px; }
+    .ef-total    { display:flex; justify-content:space-between; padding:10px 12px; font-size:15px; font-weight:700; color:#1a1a2e; background:#1a1a2e10; border-radius:6px; margin-top:8px; }
+    .ef-utilidad-pos { color:#27AE60; }
+    .ef-utilidad-neg { color:#e74c3c; }
+
+    /* Balance doble columna */
+    .balance-grid { display:grid; grid-template-columns:1fr 1fr; gap:20px; }
+    @media(max-width:700px){ .balance-grid { grid-template-columns:1fr; } }
+
+    /* Libro mayor */
+    .saldo-pos { color:#27AE60; font-weight:700; }
+    .saldo-neg { color:#e74c3c; font-weight:700; }
+
+    /* Exportar */
+    .btn-export { padding:5px 12px; border:none; border-radius:6px; font-size:11px; font-weight:700; cursor:pointer; }
+    .btn-pdf    { background:#e74c3c; color:white; }
+    .btn-excel  { background:#27AE60; color:white; }
+  </style>
+</head>
+<body>
+<header>
+  <h1>MASTERISADO</h1>
+  <div class="header-right">
+    <span id="usuario-nombre"></span>
+    <form action="/logout" method="POST" style="margin:0"><button type="submit" class="btn-logout">Salir</button></form>
+  </div>
+</header>
+<nav id="nav-links"></nav>
+
+<main>
+  <h2 style="font-size:16px;color:#1a1a2e;margin-bottom:20px">📒 Módulo de Contabilidad</h2>
+
+  <div class="tabs">
+    <div class="tab active"    onclick="cambiarTab('plan')">📋 Plan de Cuentas</div>
+    <div class="tab"           onclick="cambiarTab('asiento')">✏️ Nuevo Asiento</div>
+    <div class="tab"           onclick="cambiarTab('diario')">📔 Libro Diario</div>
+    <div class="tab"           onclick="cambiarTab('resultados')">📊 Estado de Resultados</div>
+    <div class="tab"           onclick="cambiarTab('balance')">⚖️ Balance General</div>
+    <div class="tab"           onclick="cambiarTab('mayor')">📖 Libro Mayor</div>
+  </div>
+
+  <!-- ── PLAN DE CUENTAS ── -->
+  <div class="tab-content active" id="tab-plan">
+    <div class="card">
+      <div class="top-bar">
+        <div class="card-title" style="margin:0">Plan de Cuentas (PUC)</div>
+        <div style="display:flex;gap:8px;align-items:center">
+          <select id="filtro-tipo-cuenta" onchange="filtrarCuentas()" style="padding:7px 10px;border:1.5px solid #d0d5dd;border-radius:7px;font-size:12px">
+            <option value="">Todos los tipos</option>
+            <option value="activo">Activo</option>
+            <option value="pasivo">Pasivo</option>
+            <option value="patrimonio">Patrimonio</option>
+            <option value="ingreso">Ingreso</option>
+            <option value="costo">Costo</option>
+            <option value="gasto">Gasto</option>
+          </select>
+          <button class="btn btn-success btn-sm" onclick="abrirModalCuenta()">+ Nueva cuenta</button>
+        </div>
+      </div>
+      <div class="tabla-wrap">
+        <table>
+          <thead><tr><th>Código</th><th>Nombre</th><th>Tipo</th><th>Naturaleza</th><th>Nivel</th></tr></thead>
+          <tbody id="tabla-cuentas"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── NUEVO ASIENTO ── -->
+  <div class="tab-content" id="tab-asiento">
+    <div class="card">
+      <div class="card-title">Crear asiento contable</div>
+      <div class="form-row">
+        <div class="campo">
+          <label>Fecha *</label>
+          <input type="date" id="as-fecha"/>
+        </div>
+        <div class="campo" style="grid-column:span 2">
+          <label>Descripción *</label>
+          <input type="text" id="as-desc" placeholder="Ej: Registro de venta de mercancías"/>
+        </div>
+        <div class="campo">
+          <label>Referencia</label>
+          <input type="text" id="as-ref" placeholder="Ej: Factura #001"/>
+        </div>
+      </div>
+
+      <div style="display:flex;justify-content:space-between;align-items:center;margin:16px 0 8px">
+        <div style="font-size:12px;font-weight:700;color:#555">LÍNEAS DEL ASIENTO</div>
+        <button class="btn btn-primary btn-sm" onclick="agregarLinea()">+ Agregar línea</button>
+      </div>
+
+      <div class="tabla-wrap">
+        <table class="lineas-tabla">
+          <thead><tr><th style="width:35%">Cuenta</th><th>Descripción</th><th style="width:13%">Débito</th><th style="width:13%">Crédito</th><th style="width:32px"></th></tr></thead>
+          <tbody id="lineas-body"></tbody>
+        </table>
+      </div>
+
+      <div class="cuadre-bar cuadre-err" id="cuadre-bar" style="margin-top:12px">
+        <span>Débitos: <strong id="total-debe">$0</strong></span>
+        <span>Créditos: <strong id="total-haber">$0</strong></span>
+        <span id="cuadre-msg">⚠️ El asiento no cuadra</span>
+      </div>
+
+      <div class="modal-footer" style="margin-top:16px">
+        <button class="btn" style="background:#eee;color:#555" onclick="limpiarAsiento()">Limpiar</button>
+        <button class="btn btn-success" onclick="guardarAsiento()">Guardar asiento</button>
+      </div>
+    </div>
+
+    <!-- Asientos recientes -->
+    <div class="card" style="margin-top:0">
+      <div class="card-title">Asientos recientes</div>
+      <div class="tabla-wrap">
+        <table>
+          <thead><tr><th>#</th><th>Fecha</th><th>Descripción</th><th>Referencia</th><th>Estado</th><th>Débitos</th><th>Acciones</th></tr></thead>
+          <tbody id="tabla-asientos-recientes"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── LIBRO DIARIO ── -->
+  <div class="tab-content" id="tab-diario">
+    <div class="filtros">
+      <input type="date" id="d-desde"/>
+      <input type="date" id="d-hasta"/>
+      <button class="btn btn-primary btn-sm" onclick="cargarDiario()">Filtrar</button>
+      <button class="btn-export btn-pdf"   onclick="exportarDiarioPDF()">📄 PDF</button>
+      <button class="btn-export btn-excel" onclick="exportarDiarioExcel()">📊 Excel</button>
+    </div>
+    <div class="card">
+      <div class="tabla-wrap">
+        <table>
+          <thead><tr><th>#</th><th>Fecha</th><th>Descripción</th><th>Referencia</th><th>Estado</th><th>Total Débito</th><th>Acciones</th></tr></thead>
+          <tbody id="tabla-diario"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── ESTADO DE RESULTADOS ── -->
+  <div class="tab-content" id="tab-resultados">
+    <div class="filtros">
+      <label style="font-size:12px;color:#666">Período:</label>
+      <input type="date" id="er-desde"/>
+      <input type="date" id="er-hasta"/>
+      <button class="btn btn-primary btn-sm" onclick="cargarResultados()">Generar</button>
+      <button class="btn-export btn-pdf"   onclick="exportarResultadosPDF()">📄 PDF</button>
+      <button class="btn-export btn-excel" onclick="exportarResultadosExcel()">📊 Excel</button>
+    </div>
+    <div class="card" id="panel-resultados">
+      <div style="text-align:center;color:#aaa;padding:40px;font-size:13px">Selecciona un período y haz clic en Generar</div>
+    </div>
+  </div>
+
+  <!-- ── BALANCE GENERAL ── -->
+  <div class="tab-content" id="tab-balance">
+    <div class="filtros">
+      <label style="font-size:12px;color:#666">Al corte:</label>
+      <input type="date" id="bg-hasta"/>
+      <button class="btn btn-primary btn-sm" onclick="cargarBalance()">Generar</button>
+      <button class="btn-export btn-pdf"   onclick="exportarBalancePDF()">📄 PDF</button>
+      <button class="btn-export btn-excel" onclick="exportarBalanceExcel()">📊 Excel</button>
+    </div>
+    <div class="card" id="panel-balance">
+      <div style="text-align:center;color:#aaa;padding:40px;font-size:13px">Selecciona una fecha de corte y haz clic en Generar</div>
+    </div>
+  </div>
+
+  <!-- ── LIBRO MAYOR ── -->
+  <div class="tab-content" id="tab-mayor">
+    <div class="filtros">
+      <select id="lm-cuenta" style="min-width:260px;padding:7px 10px;border:1.5px solid #d0d5dd;border-radius:7px;font-size:12px">
+        <option value="">— Seleccionar cuenta —</option>
+      </select>
+      <input type="date" id="lm-desde"/>
+      <input type="date" id="lm-hasta"/>
+      <button class="btn btn-primary btn-sm" onclick="cargarMayor()">Consultar</button>
+      <button class="btn-export btn-pdf"   onclick="exportarMayorPDF()">📄 PDF</button>
+      <button class="btn-export btn-excel" onclick="exportarMayorExcel()">📊 Excel</button>
+    </div>
+    <div class="card" id="panel-mayor">
+      <div style="text-align:center;color:#aaa;padding:40px;font-size:13px">Selecciona una cuenta y filtra por fechas</div>
+    </div>
+  </div>
+</main>
+
+<!-- Modal nueva cuenta -->
+<div class="modal-overlay" id="modal-cuenta">
+  <div class="modal" style="max-width:440px">
+    <div class="modal-title">Nueva cuenta contable</div>
+    <div class="form-row">
+      <div class="campo"><label>Código *</label><input id="nc-codigo" placeholder="Ej: 5230"/></div>
+      <div class="campo" style="grid-column:span 2"><label>Nombre *</label><input id="nc-nombre" placeholder="Ej: Honorarios"/></div>
+    </div>
+    <div class="form-row">
+      <div class="campo">
+        <label>Tipo *</label>
+        <select id="nc-tipo" onchange="autoNaturaleza()">
+          <option value="">Seleccionar...</option>
+          <option value="activo">Activo</option>
+          <option value="pasivo">Pasivo</option>
+          <option value="patrimonio">Patrimonio</option>
+          <option value="ingreso">Ingreso</option>
+          <option value="costo">Costo</option>
+          <option value="gasto">Gasto</option>
+        </select>
+      </div>
+      <div class="campo">
+        <label>Naturaleza *</label>
+        <select id="nc-naturaleza">
+          <option value="deudora">Deudora</option>
+          <option value="acreedora">Acreedora</option>
+        </select>
+      </div>
+      <div class="campo">
+        <label>Nivel</label>
+        <select id="nc-nivel">
+          <option value="1">1 - Clase</option>
+          <option value="2">2 - Grupo</option>
+          <option value="3" selected>3 - Cuenta</option>
+          <option value="4">4 - Subcuenta</option>
+        </select>
+      </div>
+    </div>
+    <div id="nc-msg" style="font-size:13px;color:#e74c3c;margin-top:6px;display:none"></div>
+    <div class="modal-footer">
+      <button class="btn" style="background:#eee;color:#555" onclick="cerrarModalCuenta()">Cancelar</button>
+      <button class="btn btn-success" onclick="guardarCuenta()">Guardar cuenta</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal detalle asiento -->
+<div class="modal-overlay" id="modal-asiento">
+  <div class="modal" style="max-width:640px">
+    <div class="modal-title" id="det-titulo">Asiento #</div>
+    <div id="det-info" style="display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:13px;color:#555;margin-bottom:14px"></div>
+    <table class="lineas-tabla">
+      <thead><tr><th>Código</th><th>Cuenta</th><th>Descripción</th><th style="text-align:right">Débito</th><th style="text-align:right">Crédito</th></tr></thead>
+      <tbody id="det-lineas"></tbody>
+      <tfoot id="det-totales"></tfoot>
+    </table>
+    <div class="modal-footer">
+      <button class="btn" style="background:#eee;color:#555" onclick="cerrarModalAsiento()">Cerrar</button>
+      <button class="btn btn-danger" id="btn-anular-asiento" onclick="anularAsientoActual()">Anular asiento</button>
+    </div>
+  </div>
+</div>
+
+<script>
+document.getElementById('base-css').textContent = CSS_BASE;
+
+const fmtN = v => parseFloat(v||0).toLocaleString('es-CO',{minimumFractionDigits:2,maximumFractionDigits:2});
+const fmtM = v => '$' + parseFloat(v||0).toLocaleString('es-CO',{minimumFractionDigits:0,maximumFractionDigits:0});
+
+let cuentas = [], datosDiario = [], datosResultados = [], datosBalance = [], datosMayor = [];
+let asientoDetalleActual = null;
+
+// ── CDN export helpers ────────────────────────────────────────────────────────
+async function cargarScript(url) {
+  if (document.querySelector(`script[src="${url}"]`)) return;
+  await new Promise((ok, err) => {
+    const s = document.createElement('script'); s.src = url; s.onload = ok; s.onerror = err;
+    document.head.appendChild(s);
+  });
+}
+
+async function exportarPDF(titulo, columnas, filas, landscape) {
+  try {
+    await cargarScript('https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js');
+    await cargarScript('https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js');
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF({ orientation: landscape ? 'landscape' : 'portrait' });
+    doc.setFontSize(14); doc.text('MASTERISADO — ' + titulo, 14, 15);
+    doc.setFontSize(9);  doc.text('Generado: ' + new Date().toLocaleString('es-CO'), 14, 22);
+    doc.autoTable({ startY:28, head:[columnas], body:filas,
+      styles:{fontSize:8}, headStyles:{fillColor:[26,26,46]} });
+    doc.save(titulo.replace(/\s+/g,'_') + '.pdf');
+  } catch(e) { toast('Error PDF: ' + e.message, 'err'); }
+}
+
+async function exportarExcel(titulo, headers, filas) {
+  try {
+    await cargarScript('https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js');
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.aoa_to_sheet([headers, ...filas]);
+    ws['!cols'] = headers.map((_,i) => ({ wch: Math.max(headers[i].length, ...filas.map(r=>String(r[i]||'').length))+2 }));
+    XLSX.utils.book_append_sheet(wb, ws, titulo.substring(0,31));
+    XLSX.writeFile(wb, titulo.replace(/\s+/g,'_') + '.xlsx');
+  } catch(e) { toast('Error Excel: ' + e.message, 'err'); }
+}
+
+// ── Tabs ──────────────────────────────────────────────────────────────────────
+function cambiarTab(id) {
+  document.querySelectorAll('.tab,.tab-content').forEach(el => el.classList.remove('active'));
+  document.querySelector(`.tab[onclick="cambiarTab('${id}')"]`).classList.add('active');
+  document.getElementById(`tab-${id}`).classList.add('active');
+  const fnMap = { plan:cargarCuentas, diario:()=>{ cargarCuentas(); cargarDiario(); }, mayor:cargarCuentas };
+  if (fnMap[id]) fnMap[id]();
+  if (id==='asiento') { cargarCuentas(); cargarAsientosRecientes(); }
+}
+
+async function init() {
+  const sesion = await cargarSesion();
+  if (!sesion) return;
+  renderNav('/admin/contabilidad', sesion);
+  // Fecha de hoy por defecto
+  const hoy = new Date().toISOString().split('T')[0];
+  document.getElementById('as-fecha').value = hoy;
+  document.getElementById('bg-hasta').value = hoy;
+  const primerDiaMes = hoy.substring(0,7) + '-01';
+  ['er-desde','d-desde','lm-desde'].forEach(id => document.getElementById(id).value = primerDiaMes);
+  ['er-hasta','d-hasta','lm-hasta'].forEach(id => document.getElementById(id).value = hoy);
+  await cargarCuentas();
+  // Iniciar con 2 líneas en blanco
+  agregarLinea(); agregarLinea();
+}
+
+// ── Plan de cuentas ───────────────────────────────────────────────────────────
+async function cargarCuentas() {
+  cuentas = await fetch('/api/contabilidad/cuentas').then(r=>r.json());
+  renderCuentas(cuentas);
+  // Poblar selector de libro mayor
+  const sel = document.getElementById('lm-cuenta');
+  const val = sel.value;
+  sel.innerHTML = '<option value="">— Seleccionar cuenta —</option>' +
+    cuentas.map(c => `<option value="${c.id}">${c.codigo} — ${c.nombre}</option>`).join('');
+  if (val) sel.value = val;
+}
+
+function renderCuentas(lista) {
+  const tbody = document.getElementById('tabla-cuentas');
+  if (!lista.length) { tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:#aaa;padding:24px">Sin cuentas</td></tr>'; return; }
+  tbody.innerHTML = lista.map(c => {
+    const indent = (c.nivel - 1) * 16;
+    const chip = `<span class="tipo-chip chip-${c.tipo}">${c.tipo}</span>`;
+    const bold = c.nivel <= 2 ? 'font-weight:700;' : '';
+    return `<tr>
+      <td><code style="font-size:12px;color:#4A90D9">${c.codigo}</code></td>
+      <td style="padding-left:${indent}px;${bold}">${c.nombre}</td>
+      <td>${chip}</td>
+      <td style="font-size:12px;color:#666">${c.naturaleza}</td>
+      <td style="font-size:12px;color:#888">${c.nivel}</td>
+    </tr>`;
+  }).join('');
+}
+
+function filtrarCuentas() {
+  const tipo = document.getElementById('filtro-tipo-cuenta').value;
+  renderCuentas(tipo ? cuentas.filter(c => c.tipo === tipo) : cuentas);
+}
+
+function abrirModalCuenta() {
+  ['nc-codigo','nc-nombre'].forEach(id => document.getElementById(id).value = '');
+  document.getElementById('nc-tipo').value = '';
+  document.getElementById('nc-naturaleza').value = 'deudora';
+  document.getElementById('nc-nivel').value = '3';
+  document.getElementById('nc-msg').style.display = 'none';
+  document.getElementById('modal-cuenta').classList.add('open');
+}
+function cerrarModalCuenta() { document.getElementById('modal-cuenta').classList.remove('open'); }
+
+function autoNaturaleza() {
+  const tipo = document.getElementById('nc-tipo').value;
+  const nat  = { activo:'deudora', costo:'deudora', gasto:'deudora', pasivo:'acreedora', patrimonio:'acreedora', ingreso:'acreedora' };
+  if (nat[tipo]) document.getElementById('nc-naturaleza').value = nat[tipo];
+}
+
+async function guardarCuenta() {
+  const codigo     = document.getElementById('nc-codigo').value.trim();
+  const nombre     = document.getElementById('nc-nombre').value.trim();
+  const tipo       = document.getElementById('nc-tipo').value;
+  const naturaleza = document.getElementById('nc-naturaleza').value;
+  const nivel      = document.getElementById('nc-nivel').value;
+  const msg = document.getElementById('nc-msg');
+  msg.style.display = 'none';
+  if (!codigo || !nombre || !tipo) { msg.textContent = 'Completa todos los campos requeridos'; msg.style.display='block'; return; }
+  const r = await fetch('/api/contabilidad/cuentas', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({ codigo, nombre, tipo, naturaleza, nivel })
+  });
+  const data = await r.json();
+  if (data.exito) { cerrarModalCuenta(); toast('Cuenta creada'); cargarCuentas(); }
+  else { msg.textContent = data.mensaje || 'Error'; msg.style.display = 'block'; }
+}
+
+// ── Asientos ──────────────────────────────────────────────────────────────────
+let lineaIdx = 0;
+
+function cuentasOpts() {
+  return cuentas.map(c => `<option value="${c.id}">${c.codigo} — ${c.nombre}</option>`).join('');
+}
+
+function agregarLinea() {
+  const idx = lineaIdx++;
+  const tr = document.createElement('tr');
+  tr.id = `linea-${idx}`;
+  tr.innerHTML = `
+    <td><select onchange="actualizarBalance()"><option value="">— Cuenta —</option>${cuentasOpts()}</select></td>
+    <td><input type="text" placeholder="Descripción (opcional)"/></td>
+    <td><input type="number" class="debe" min="0" step="0.01" value="0" oninput="actualizarBalance()"/></td>
+    <td><input type="number" class="haber" min="0" step="0.01" value="0" oninput="actualizarBalance()"/></td>
+    <td><button style="background:none;border:none;cursor:pointer;color:#e74c3c;font-size:16px" onclick="eliminarLinea('linea-${idx}')">✕</button></td>
+  `;
+  document.getElementById('lineas-body').appendChild(tr);
+  actualizarBalance();
+}
+
+function eliminarLinea(id) {
+  const el = document.getElementById(id);
+  if (el) { el.remove(); actualizarBalance(); }
+}
+
+function actualizarBalance() {
+  const tbody = document.getElementById('lineas-body');
+  let debe = 0, haber = 0;
+  tbody.querySelectorAll('tr').forEach(tr => {
+    debe  += parseFloat(tr.querySelector('.debe')?.value  || 0);
+    haber += parseFloat(tr.querySelector('.haber')?.value || 0);
+  });
+  const fM = v => '$' + v.toLocaleString('es-CO',{minimumFractionDigits:2,maximumFractionDigits:2});
+  document.getElementById('total-debe').textContent  = fM(debe);
+  document.getElementById('total-haber').textContent = fM(haber);
+  const cuadra = Math.abs(debe - haber) < 0.01;
+  const bar = document.getElementById('cuadre-bar');
+  const msg = document.getElementById('cuadre-msg');
+  bar.className = 'cuadre-bar ' + (cuadra ? 'cuadre-ok' : 'cuadre-err');
+  msg.textContent = cuadra ? '✅ El asiento cuadra' : '⚠️ El asiento no cuadra';
+}
+
+function limpiarAsiento() {
+  document.getElementById('as-desc').value = '';
+  document.getElementById('as-ref').value  = '';
+  document.getElementById('lineas-body').innerHTML = '';
+  lineaIdx = 0;
+  agregarLinea(); agregarLinea();
+}
+
+async function guardarAsiento() {
+  const fecha       = document.getElementById('as-fecha').value;
+  const descripcion = document.getElementById('as-desc').value.trim();
+  const referencia  = document.getElementById('as-ref').value.trim();
+  const tbody = document.getElementById('lineas-body');
+  const lineas = [];
+  tbody.querySelectorAll('tr').forEach(tr => {
+    const cuenta_id   = tr.querySelector('select').value;
+    const descripcionL = tr.querySelectorAll('input')[0].value.trim();
+    const debe  = parseFloat(tr.querySelector('.debe').value)  || 0;
+    const haber = parseFloat(tr.querySelector('.haber').value) || 0;
+    if (debe > 0 || haber > 0) lineas.push({ cuenta_id, descripcion: descripcionL, debe, haber });
+  });
+  const r = await fetch('/api/contabilidad/asientos', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({ fecha, descripcion, referencia, lineas })
+  });
+  const data = await r.json();
+  if (data.exito) {
+    toast(`Asiento #${data.asiento_id} guardado correctamente`);
+    limpiarAsiento();
+    cargarAsientosRecientes();
+  } else { toast(data.mensaje || 'Error al guardar', 'err'); }
+}
+
+async function cargarAsientosRecientes() {
+  const hoy = new Date().toISOString().split('T')[0];
+  const hace30 = new Date(Date.now() - 30*86400000).toISOString().split('T')[0];
+  const data = await fetch(`/api/contabilidad/asientos?desde=${hace30}&hasta=${hoy}`).then(r=>r.json());
+  const tbody = document.getElementById('tabla-asientos-recientes');
+  if (!data.length) { tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:#aaa;padding:20px">Sin asientos recientes</td></tr>'; return; }
+  tbody.innerHTML = data.slice(0,15).map(a => `<tr>
+    <td><strong>#${a.id}</strong></td>
+    <td style="font-size:12px;color:#888">${fmtFecha(a.fecha)}</td>
+    <td style="font-size:12px">${a.descripcion}</td>
+    <td style="font-size:12px;color:#888">${a.referencia||'—'}</td>
+    <td>${badge(a.estado==='activo'?'Activo':'Anulado', a.estado==='activo'?'verde':'rojo')}</td>
+    <td style="font-size:12px;font-weight:700">${fmtM(a.total_debe)}</td>
+    <td><button class="btn btn-primary btn-sm" onclick="verAsiento(${a.id})">Ver</button></td>
+  </tr>`).join('');
+}
+
+// ── Libro Diario ──────────────────────────────────────────────────────────────
+async function cargarDiario() {
+  const desde = document.getElementById('d-desde').value;
+  const hasta  = document.getElementById('d-hasta').value;
+  let url = '/api/contabilidad/asientos';
+  const p = []; if (desde) p.push(`desde=${desde}`); if (hasta) p.push(`hasta=${hasta}`);
+  if (p.length) url += '?' + p.join('&');
+  datosDiario = await fetch(url).then(r=>r.json());
+  const tbody = document.getElementById('tabla-diario');
+  if (!datosDiario.length) { tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:#aaa;padding:30px">Sin asientos en el período</td></tr>'; return; }
+  tbody.innerHTML = datosDiario.map(a => `<tr>
+    <td><strong>#${a.id}</strong></td>
+    <td style="font-size:12px;color:#888;white-space:nowrap">${fmtFecha(a.fecha)}</td>
+    <td>${a.descripcion}</td>
+    <td style="font-size:12px;color:#888">${a.referencia||'—'}</td>
+    <td>${badge(a.estado==='activo'?'Activo':'Anulado', a.estado==='activo'?'verde':'rojo')}</td>
+    <td style="font-weight:700">${fmtM(a.total_debe)}</td>
+    <td><div class="acciones">
+      <button class="btn btn-primary btn-sm" onclick="verAsiento(${a.id})">Ver</button>
+      ${a.estado==='activo'?`<button class="btn btn-danger btn-sm" onclick="anularAsiento(${a.id})">Anular</button>`:''}
+    </div></td>
+  </tr>`).join('');
+}
+
+function exportarDiarioPDF() {
+  exportarPDF('Libro_Diario',['#','Fecha','Descripción','Referencia','Estado','Total Débito'],
+    datosDiario.map(a=>[`#${a.id}`,fmtFecha(a.fecha),a.descripcion,a.referencia||'—',a.estado,fmtM(a.total_debe)]), false);
+}
+function exportarDiarioExcel() {
+  exportarExcel('Libro_Diario',['#','Fecha','Descripción','Referencia','Estado','Total Débito'],
+    datosDiario.map(a=>[a.id,fmtFecha(a.fecha),a.descripcion,a.referencia||'—',a.estado,parseFloat(a.total_debe)]));
+}
+
+// ── Ver / Anular asiento ──────────────────────────────────────────────────────
+async function verAsiento(id) {
+  const data = await fetch(`/api/contabilidad/asientos/${id}`).then(r=>r.json());
+  asientoDetalleActual = data;
+  document.getElementById('det-titulo').textContent = `Asiento #${data.id}`;
+  document.getElementById('det-info').innerHTML = `
+    <div><strong>Fecha:</strong> ${fmtFecha(data.fecha)}</div>
+    <div><strong>Estado:</strong> ${badge(data.estado==='activo'?'Activo':'Anulado',data.estado==='activo'?'verde':'rojo')}</div>
+    <div style="grid-column:1/-1"><strong>Descripción:</strong> ${data.descripcion}</div>
+    ${data.referencia?`<div><strong>Referencia:</strong> ${data.referencia}</div>`:''}
+    <div><strong>Registrado por:</strong> ${data.usuario_nombre||'—'}</div>
+  `;
+  const lineas = data.lineas || [];
+  let td = 0, th = 0;
+  document.getElementById('det-lineas').innerHTML = lineas.map(l => {
+    td += parseFloat(l.debe||0); th += parseFloat(l.haber||0);
+    return `<tr>
+      <td><code style="font-size:11px">${l.codigo}</code></td>
+      <td>${l.cuenta_nombre}</td>
+      <td style="font-size:12px;color:#888">${l.descripcion||'—'}</td>
+      <td style="text-align:right;font-weight:700;color:#4A90D9">${parseFloat(l.debe)>0?fmtM(l.debe):'—'}</td>
+      <td style="text-align:right;font-weight:700;color:#27AE60">${parseFloat(l.haber)>0?fmtM(l.haber):'—'}</td>
+    </tr>`;
+  }).join('');
+  document.getElementById('det-totales').innerHTML = `
+    <tr style="border-top:2px solid #1a1a2e">
+      <td colspan="3" style="padding:8px;text-align:right;font-weight:700;font-size:13px">TOTALES</td>
+      <td style="text-align:right;font-weight:700;color:#4A90D9">${fmtM(td)}</td>
+      <td style="text-align:right;font-weight:700;color:#27AE60">${fmtM(th)}</td>
+    </tr>`;
+  const btnAnular = document.getElementById('btn-anular-asiento');
+  btnAnular.style.display = data.estado === 'activo' ? 'inline-block' : 'none';
+  document.getElementById('modal-asiento').classList.add('open');
+}
+
+function cerrarModalAsiento() { document.getElementById('modal-asiento').classList.remove('open'); }
+
+async function anularAsientoActual() {
+  if (!asientoDetalleActual || !confirmar('¿Anular este asiento? Esta acción no se puede deshacer.')) return;
+  const r = await fetch(`/api/contabilidad/asientos/${asientoDetalleActual.id}/anular`, { method:'PUT' });
+  const data = await r.json();
+  if (data.exito) { cerrarModalAsiento(); toast('Asiento anulado'); cargarDiario(); cargarAsientosRecientes(); }
+  else toast(data.mensaje || 'Error', 'err');
+}
+
+async function anularAsiento(id) {
+  if (!confirmar('¿Anular el asiento #' + id + '?')) return;
+  const r = await fetch(`/api/contabilidad/asientos/${id}/anular`, { method:'PUT' });
+  const data = await r.json();
+  if (data.exito) { toast('Asiento anulado'); cargarDiario(); }
+  else toast(data.mensaje || 'Error', 'err');
+}
+
+// ── Estado de Resultados ──────────────────────────────────────────────────────
+function calcSaldo(cuenta) {
+  // Cuentas de naturaleza deudora: saldo = debe - haber; acreedora: haber - debe
+  const debe  = parseFloat(cuenta.total_debe  || 0);
+  const haber = parseFloat(cuenta.total_haber || 0);
+  return cuenta.naturaleza === 'deudora' ? debe - haber : haber - debe;
+}
+
+async function cargarResultados() {
+  const desde = document.getElementById('er-desde').value;
+  const hasta  = document.getElementById('er-hasta').value;
+  let url = '/api/contabilidad/estado-resultados';
+  const p = []; if (desde) p.push(`desde=${desde}`); if (hasta) p.push(`hasta=${hasta}`);
+  if (p.length) url += '?' + p.join('&');
+  datosResultados = await fetch(url).then(r=>r.json());
+  renderResultados(datosResultados, desde, hasta);
+}
+
+function renderResultados(data, desde, hasta) {
+  const ingresos = data.filter(c => c.tipo === 'ingreso');
+  const costos   = data.filter(c => c.tipo === 'costo');
+  const gastos   = data.filter(c => c.tipo === 'gasto');
+
+  const sumLeaf = (lista) => lista.filter(c=>c.nivel>=3).reduce((s,c)=>s+calcSaldo(c),0);
+  const totalIngresos = sumLeaf(ingresos);
+  const totalCostos   = sumLeaf(costos);
+  const totalGastos   = sumLeaf(gastos);
+  const utilBruta     = totalIngresos - totalCostos;
+  const utilNeta      = utilBruta - totalGastos;
+
+  const renderGrupo = (lista) => {
+    const grupos = {};
+    lista.forEach(c => {
+      const grupo = c.codigo.substring(0,2);
+      if (!grupos[grupo]) grupos[grupo] = { nombre: lista.find(x=>x.codigo===grupo)?.nombre||grupo, cuentas:[] };
+      if (c.nivel >= 3) grupos[grupo].cuentas.push(c);
+    });
+    return Object.values(grupos).filter(g=>g.cuentas.length).map(g => `
+      <div class="ef-grupo">${g.nombre}</div>
+      ${g.cuentas.map(c=>`
+        <div class="ef-row"><span>${c.codigo} — ${c.nombre}</span><span>${fmtM(calcSaldo(c))}</span></div>
+      `).join('')}
+    `).join('');
+  };
+
+  const colorUtil = utilNeta >= 0 ? 'ef-utilidad-pos' : 'ef-utilidad-neg';
+  const titulo = (desde || hasta) ? `Período: ${desde||'inicio'} al ${hasta||'hoy'}` : 'Período: todo el tiempo';
+
+  document.getElementById('panel-resultados').innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+      <div class="card-title" style="margin:0">Estado de Resultados</div>
+      <div style="font-size:12px;color:#888">${titulo}</div>
+    </div>
+    <div class="ef-section">
+      <div class="ef-titulo">Ingresos Operacionales</div>
+      ${renderGrupo(ingresos)}
+      <div class="ef-subtotal"><span>Total Ingresos</span><span style="color:#27AE60">${fmtM(totalIngresos)}</span></div>
+    </div>
+    <div class="ef-section">
+      <div class="ef-titulo">(-) Costo de Ventas</div>
+      ${renderGrupo(costos)}
+      <div class="ef-subtotal"><span>Total Costos</span><span style="color:#e74c3c">${fmtM(totalCostos)}</span></div>
+    </div>
+    <div class="ef-total" style="margin:12px 0"><span>UTILIDAD BRUTA</span><span class="${utilBruta>=0?'ef-utilidad-pos':'ef-utilidad-neg'}">${fmtM(utilBruta)}</span></div>
+    <div class="ef-section">
+      <div class="ef-titulo">(-) Gastos Operacionales</div>
+      ${renderGrupo(gastos)}
+      <div class="ef-subtotal"><span>Total Gastos</span><span style="color:#e74c3c">${fmtM(totalGastos)}</span></div>
+    </div>
+    <div class="ef-total"><span>UTILIDAD NETA DEL PERÍODO</span><span class="${colorUtil}">${fmtM(utilNeta)}</span></div>
+  `;
+}
+
+function exportarResultadosPDF() {
+  const filas = [];
+  datosResultados.filter(c=>c.nivel>=3).forEach(c => filas.push([c.codigo, c.nombre, c.tipo, fmtM(calcSaldo(c))]));
+  exportarPDF('Estado_de_Resultados',['Código','Cuenta','Tipo','Saldo'],filas,false);
+}
+function exportarResultadosExcel() {
+  const filas = datosResultados.filter(c=>c.nivel>=3).map(c=>[c.codigo,c.nombre,c.tipo,calcSaldo(c)]);
+  exportarExcel('Estado_de_Resultados',['Código','Cuenta','Tipo','Saldo'],filas);
+}
+
+// ── Balance General ───────────────────────────────────────────────────────────
+async function cargarBalance() {
+  const hasta = document.getElementById('bg-hasta').value;
+  const url = '/api/contabilidad/balance-general' + (hasta ? `?hasta=${hasta}` : '');
+  datosBalance = await fetch(url).then(r=>r.json());
+  renderBalance(datosBalance, hasta);
+}
+
+function renderBalance(data, hasta) {
+  const activos   = data.filter(c => c.tipo === 'activo');
+  const pasivos   = data.filter(c => c.tipo === 'pasivo');
+  const patrim    = data.filter(c => c.tipo === 'patrimonio');
+
+  const sumLeaf = lista => lista.filter(c=>c.nivel>=3).reduce((s,c)=>s+calcSaldo(c),0);
+  const totalActivos  = sumLeaf(activos);
+  const totalPasivos  = sumLeaf(pasivos);
+  const totalPatrim   = sumLeaf(patrim);
+  const totalPyP      = totalPasivos + totalPatrim;
+
+  const renderSec = (lista, titulo) => {
+    const grupos = {};
+    lista.forEach(c => {
+      const g = c.codigo.substring(0,2);
+      if (!grupos[g]) grupos[g] = { nombre: lista.find(x=>x.codigo===g)?.nombre||g, cuentas:[] };
+      if (c.nivel >= 3) grupos[g].cuentas.push(c);
+    });
+    const rows = Object.values(grupos).filter(g=>g.cuentas.length).map(g => `
+      <div class="ef-grupo">${g.nombre}</div>
+      ${g.cuentas.map(c=>`<div class="ef-row"><span>${c.codigo} — ${c.nombre}</span><span>${fmtM(calcSaldo(c))}</span></div>`).join('')}
+    `).join('');
+    return `<div class="ef-titulo">${titulo}</div>${rows}`;
+  };
+
+  const equilibra = Math.abs(totalActivos - totalPyP) < 1;
+  const corte = hasta ? `Al corte: ${hasta}` : 'Acumulado';
+
+  document.getElementById('panel-balance').innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+      <div class="card-title" style="margin:0">Balance General</div>
+      <div style="font-size:12px;color:#888">${corte}</div>
+    </div>
+    <div class="balance-grid">
+      <div>
+        ${renderSec(activos,'ACTIVOS')}
+        <div class="ef-total"><span>TOTAL ACTIVOS</span><span class="ef-utilidad-pos">${fmtM(totalActivos)}</span></div>
+      </div>
+      <div>
+        ${renderSec(pasivos,'PASIVOS')}
+        <div class="ef-subtotal"><span>Total Pasivos</span><span style="color:#e74c3c">${fmtM(totalPasivos)}</span></div>
+        ${renderSec(patrim,'PATRIMONIO')}
+        <div class="ef-subtotal"><span>Total Patrimonio</span><span style="color:#4A90D9">${fmtM(totalPatrim)}</span></div>
+        <div class="ef-total"><span>TOTAL PASIVOS + PATRIMONIO</span><span class="${equilibra?'ef-utilidad-pos':'ef-utilidad-neg'}">${fmtM(totalPyP)}</span></div>
+      </div>
+    </div>
+    ${!equilibra?`<div style="margin-top:12px;padding:10px 14px;background:#fff3cd;border-radius:8px;font-size:12px;color:#856404">⚠️ El balance no cuadra. Diferencia: ${fmtM(Math.abs(totalActivos-totalPyP))}</div>`:''}
+  `;
+}
+
+function exportarBalancePDF() {
+  const filas = datosBalance.filter(c=>c.nivel>=3).map(c=>[c.codigo,c.nombre,c.tipo,fmtM(calcSaldo(c))]);
+  exportarPDF('Balance_General',['Código','Cuenta','Tipo','Saldo'],filas,false);
+}
+function exportarBalanceExcel() {
+  const filas = datosBalance.filter(c=>c.nivel>=3).map(c=>[c.codigo,c.nombre,c.tipo,calcSaldo(c)]);
+  exportarExcel('Balance_General',['Código','Cuenta','Tipo','Saldo'],filas);
+}
+
+// ── Libro Mayor ───────────────────────────────────────────────────────────────
+async function cargarMayor() {
+  const cuenta_id = document.getElementById('lm-cuenta').value;
+  const desde     = document.getElementById('lm-desde').value;
+  const hasta     = document.getElementById('lm-hasta').value;
+  if (!cuenta_id) { toast('Selecciona una cuenta', 'err'); return; }
+  let url = `/api/contabilidad/libro-mayor?cuenta_id=${cuenta_id}`;
+  if (desde) url += `&desde=${desde}`; if (hasta) url += `&hasta=${hasta}`;
+  datosMayor = await fetch(url).then(r=>r.json());
+  const cuenta = cuentas.find(c => c.id == cuenta_id);
+  renderMayor(datosMayor, cuenta);
+}
+
+function renderMayor(data, cuenta) {
+  const panel = document.getElementById('panel-mayor');
+  if (!data.length) {
+    panel.innerHTML = '<div style="text-align:center;color:#aaa;padding:40px">Sin movimientos para esta cuenta en el período</div>';
+    return;
+  }
+
+  const esDeudora = cuenta?.naturaleza === 'deudora';
+  let saldo = 0, totalD = 0, totalH = 0;
+  const filas = data.map(m => {
+    const d = parseFloat(m.debe||0), h = parseFloat(m.haber||0);
+    saldo += esDeudora ? (d - h) : (h - d);
+    totalD += d; totalH += h;
+    const col = saldo >= 0 ? 'saldo-pos' : 'saldo-neg';
+    return `<tr>
+      <td style="font-size:11px;color:#888;white-space:nowrap">${fmtFecha(m.fecha)}</td>
+      <td><strong>#${m.asiento_id}</strong></td>
+      <td style="font-size:12px">${m.asiento_desc}</td>
+      <td style="font-size:12px;color:#888">${m.descripcion||'—'}</td>
+      <td style="text-align:right;color:#4A90D9;font-weight:700">${d>0?fmtM(d):'—'}</td>
+      <td style="text-align:right;color:#27AE60;font-weight:700">${h>0?fmtM(h):'—'}</td>
+      <td style="text-align:right" class="${col}">${fmtM(Math.abs(saldo))} ${saldo<0?'Cr':'Db'}</td>
+    </tr>`;
+  });
+
+  panel.innerHTML = `
+    <div style="margin-bottom:12px">
+      <strong style="font-size:14px">${cuenta?.codigo} — ${cuenta?.nombre}</strong>
+      <span style="font-size:12px;color:#888;margin-left:12px">Naturaleza: ${cuenta?.naturaleza}</span>
+    </div>
+    <div class="tabla-wrap">
+      <table>
+        <thead><tr><th>Fecha</th><th>Asiento</th><th>Descripción</th><th>Detalle</th><th style="text-align:right">Débito</th><th style="text-align:right">Crédito</th><th style="text-align:right">Saldo</th></tr></thead>
+        <tbody>${filas.join('')}</tbody>
+        <tfoot><tr style="border-top:2px solid #1a1a2e;font-weight:700">
+          <td colspan="4" style="padding:8px;text-align:right">TOTALES</td>
+          <td style="padding:8px;text-align:right;color:#4A90D9">${fmtM(totalD)}</td>
+          <td style="padding:8px;text-align:right;color:#27AE60">${fmtM(totalH)}</td>
+          <td style="padding:8px;text-align:right" class="${saldo>=0?'saldo-pos':'saldo-neg'}">${fmtM(Math.abs(saldo))} ${saldo<0?'Cr':'Db'}</td>
+        </tr></tfoot>
+      </table>
+    </div>
+  `;
+}
+
+function exportarMayorPDF() {
+  const cuenta = cuentas.find(c => c.id == document.getElementById('lm-cuenta').value);
+  let saldo = 0; const esDeudora = cuenta?.naturaleza === 'deudora';
+  const filas = datosMayor.map(m=>{
+    const d=parseFloat(m.debe||0),h=parseFloat(m.haber||0);
+    saldo += esDeudora?(d-h):(h-d);
+    return [fmtFecha(m.fecha),`#${m.asiento_id}`,m.asiento_desc,m.descripcion||'—',d>0?fmtM(d):'—',h>0?fmtM(h):'—',fmtM(Math.abs(saldo))+(saldo<0?' Cr':' Db')];
+  });
+  exportarPDF(`Libro_Mayor_${cuenta?.codigo||''}`,['Fecha','Asiento','Descripción','Detalle','Débito','Crédito','Saldo'],filas,true);
+}
+function exportarMayorExcel() {
+  const cuenta = cuentas.find(c => c.id == document.getElementById('lm-cuenta').value);
+  let saldo = 0; const esDeudora = cuenta?.naturaleza === 'deudora';
+  const filas = datosMayor.map(m=>{
+    const d=parseFloat(m.debe||0),h=parseFloat(m.haber||0);
+    saldo += esDeudora?(d-h):(h-d);
+    return [fmtFecha(m.fecha),m.asiento_id,m.asiento_desc,m.descripcion||'—',d,h,Math.abs(saldo)];
+  });
+  exportarExcel(`Libro_Mayor_${cuenta?.codigo||''}`,['Fecha','Asiento','Descripción','Detalle','Débito','Crédito','Saldo'],filas);
+}
+
+init();
+</script>
+</body>
+</html>

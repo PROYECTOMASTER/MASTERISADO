@@ -1,3 +1,4 @@
+require('dotenv').config();
 const express = require('express');
 const session = require('express-session');
 const bcrypt = require('bcryptjs');
@@ -216,6 +217,12 @@ app.post('/api/marcas',        requireAuth, requirePermiso('productos'), async (
 });
 
 app.get('/api/unidades',       async (_, res) => { const r = await pool.query('SELECT * FROM unidades_medida ORDER BY nombre'); res.json(r.rows); });
+app.post('/api/unidades',      requireAuth, requirePermiso('productos'), async (req, res) => {
+  const { nombre, simbolo } = req.body;
+  if (!nombre || !simbolo) return res.json({ error: 'Nombre y símbolo requeridos' });
+  try { const r = await pool.query('INSERT INTO unidades_medida (nombre, simbolo) VALUES ($1,$2) RETURNING *', [nombre, simbolo]); res.json(r.rows[0]); }
+  catch (err) { res.json({ error: err.message }); }
+});
 app.get('/api/proveedores',    requireAuth, requirePermiso('compras'), async (_, res) => { const r = await pool.query("SELECT * FROM proveedores ORDER BY nombre"); res.json(r.rows); });
 app.post('/api/proveedores',   requireAuth, requirePermiso('compras'), async (req, res) => {
   const { nombre, nit, telefono, email, direccion } = req.body;
@@ -230,9 +237,31 @@ app.put('/api/proveedores/:id', requireAuth, requirePermiso('compras'), async (r
 
 app.get('/api/clientes',       requireAuth, requirePermiso('ventas'), async (_, res) => { const r = await pool.query("SELECT * FROM clientes WHERE activo=TRUE ORDER BY nombre"); res.json(r.rows); });
 app.post('/api/clientes',      requireAuth, requirePermiso('ventas'), async (req, res) => {
-  const { nombre, documento, telefono, email } = req.body;
-  try { const r = await pool.query('INSERT INTO clientes (nombre,documento,telefono,email) VALUES ($1,$2,$3,$4) RETURNING *', [nombre,documento,telefono,email]); res.json(r.rows[0]); }
-  catch (err) { res.json({ error: err.message }); }
+  const { nombre, tipo_persona, documento, telefono, email, direccion } = req.body;
+  if (!nombre?.trim()) return res.json({ exito: false, mensaje: 'El nombre es requerido' });
+  if (!tipo_persona) return res.json({ exito: false, mensaje: 'El tipo de persona es requerido' });
+  if (!documento?.trim()) return res.json({ exito: false, mensaje: 'El número de identificación es requerido' });
+  try {
+    const r = await pool.query(
+      'INSERT INTO clientes (nombre,tipo_persona,documento,telefono,email,direccion) VALUES ($1,$2,$3,$4,$5,$6) RETURNING *',
+      [nombre.trim(), tipo_persona, documento.trim(), telefono||null, email||null, direccion||null]
+    );
+    res.json({ exito: true, cliente: r.rows[0] });
+  } catch (err) { res.json({ exito: false, mensaje: err.message }); }
+});
+
+app.put('/api/clientes/:id',   requireAuth, requirePermiso('ventas'), async (req, res) => {
+  const { nombre, tipo_persona, documento, telefono, email, direccion } = req.body;
+  if (!nombre?.trim()) return res.json({ exito: false, mensaje: 'El nombre es requerido' });
+  if (!tipo_persona) return res.json({ exito: false, mensaje: 'El tipo de persona es requerido' });
+  if (!documento?.trim()) return res.json({ exito: false, mensaje: 'El número de identificación es requerido' });
+  try {
+    await pool.query(
+      'UPDATE clientes SET nombre=$1,tipo_persona=$2,documento=$3,telefono=$4,email=$5,direccion=$6 WHERE id=$7',
+      [nombre.trim(), tipo_persona, documento.trim(), telefono||null, email||null, direccion||null, req.params.id]
+    );
+    res.json({ exito: true });
+  } catch (err) { res.json({ exito: false, mensaje: err.message }); }
 });
 
 // ── API: Productos ────────────────────────────────────────────────────────────
@@ -260,7 +289,8 @@ app.post('/api/productos', requireAuth, requirePermiso('productos'), async (req,
         precio_compra,precio_venta,iva_porcentaje,stock_minimo,punto_reorden,ubicacion,imagen_url)
       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) RETURNING *`,
       [sku,codigo_barras||null,nombre,descripcion||'',categoria_id||null,marca_id||null,unidad_id||null,
-       precio_compra,precio_venta,iva_porcentaje||19,stock_minimo||0,punto_reorden||0,ubicacion||'',imagen_url||'']);
+       parseFloat(precio_compra)||0,parseFloat(precio_venta)||0,parseFloat(iva_porcentaje)||19,
+       parseInt(stock_minimo)||0,parseInt(punto_reorden)||0,ubicacion||'',imagen_url||'']);
     res.json({ exito: true, producto: r.rows[0] });
   } catch (err) { res.json({ exito: false, mensaje: err.message }); }
 });
@@ -693,6 +723,29 @@ app.get('/api/usuarios', requireAuth, requirePermiso('usuarios'), async (_, res)
   } catch (err) { res.status(500).json({ mensaje: err.message }); }
 });
 
+app.post('/api/usuarios', requireAuth, requirePermiso('usuarios'), async (req, res) => {
+  const { nombre, usuario, password, rol_id } = req.body;
+  if (!nombre?.trim()) return res.json({ exito: false, mensaje: 'El nombre es requerido' });
+  if (!/^[a-zA-Z0-9]{1,8}$/.test(usuario))
+    return res.json({ exito: false, mensaje: 'Usuario: solo letras y números, máximo 8 caracteres' });
+  if (!password || password.length < 1 || password.length > 8)
+    return res.json({ exito: false, mensaje: 'Contraseña: máximo 8 caracteres' });
+  if (!rol_id) return res.json({ exito: false, mensaje: 'Debes seleccionar un rol' });
+  try {
+    const rolTarget = await pool.query('SELECT nombre FROM roles WHERE id=$1', [rol_id]);
+    if (!rolTarget.rows.length) return res.json({ exito: false, mensaje: 'Rol no encontrado' });
+    const esPrivilegiado = rolTarget.rows[0].nombre === 'administrador' || rolTarget.rows[0].nombre === 'superusuario';
+    if (esPrivilegiado && !req.session.usuario.permisos?.asignar_admin)
+      return res.json({ exito: false, mensaje: 'Solo el superusuario puede crear usuarios con rol de administrador' });
+    const existe = await pool.query('SELECT id FROM usuarios WHERE LOWER(usuario)=LOWER($1)', [usuario]);
+    if (existe.rows.length) return res.json({ exito: false, mensaje: 'Ese nombre de usuario ya está en uso' });
+    const hash = bcrypt.hashSync(password, 10);
+    await pool.query('INSERT INTO usuarios (nombre, usuario, password, rol_id) VALUES ($1,$2,$3,$4)',
+      [nombre.trim(), usuario.toLowerCase(), hash, rol_id]);
+    res.json({ exito: true });
+  } catch (err) { console.error(err); res.json({ exito: false, mensaje: 'Error al crear usuario' }); }
+});
+
 // Cambiar propia contraseña (cualquier usuario autenticado)
 app.post('/api/perfil/cambiar-clave', requireAuth, async (req, res) => {
   const { clave_actual, clave_nueva } = req.body;
@@ -766,6 +819,167 @@ app.put('/api/roles/:id', requireAuth, requirePermiso('roles'), async (req, res)
     await pool.query('UPDATE roles SET nombre=$1, permisos=$2 WHERE id=$3', [nombre, JSON.stringify(permisos), req.params.id]);
     res.json({ exito: true });
   } catch (err) { res.json({ exito: false, mensaje: err.message }); }
+});
+
+// ── API: Contabilidad ─────────────────────────────────────────────────────────
+
+app.get('/admin/contabilidad', requireAuth, (req, res) => {
+  if (!req.session.usuario?.permisos?.contabilidad) return res.redirect('/admin');
+  res.sendFile(path.join(__dirname, 'public', 'admin', 'contabilidad.html'));
+});
+
+app.get('/api/contabilidad/cuentas', requireAuth, requirePermiso('contabilidad'), async (_, res) => {
+  try {
+    const r = await pool.query('SELECT * FROM cuentas_contables WHERE activa=TRUE ORDER BY codigo');
+    res.json(r.rows);
+  } catch (err) { res.status(500).json({ mensaje: err.message }); }
+});
+
+app.post('/api/contabilidad/cuentas', requireAuth, requirePermiso('contabilidad'), async (req, res) => {
+  const { codigo, nombre, tipo, naturaleza, nivel } = req.body;
+  if (!codigo?.trim() || !nombre?.trim() || !tipo || !naturaleza)
+    return res.json({ exito: false, mensaje: 'Todos los campos son requeridos' });
+  try {
+    const r = await pool.query(
+      'INSERT INTO cuentas_contables (codigo,nombre,tipo,naturaleza,nivel) VALUES ($1,$2,$3,$4,$5) RETURNING *',
+      [codigo.trim(), nombre.trim(), tipo, naturaleza, parseInt(nivel)||3]
+    );
+    res.json({ exito: true, cuenta: r.rows[0] });
+  } catch (err) { res.json({ exito: false, mensaje: err.message }); }
+});
+
+app.get('/api/contabilidad/asientos', requireAuth, requirePermiso('contabilidad'), async (req, res) => {
+  const { desde, hasta } = req.query;
+  try {
+    const r = await pool.query(`
+      SELECT a.*, u.nombre AS usuario_nombre,
+             COALESCE(SUM(l.debe),0) AS total_debe,
+             COALESCE(SUM(l.haber),0) AS total_haber
+      FROM asientos_contables a
+      LEFT JOIN usuarios u ON a.usuario_id = u.id
+      LEFT JOIN lineas_asiento l ON l.asiento_id = a.id
+      WHERE ($1::date IS NULL OR a.fecha >= $1::date)
+        AND ($2::date IS NULL OR a.fecha <= $2::date)
+      GROUP BY a.id, u.nombre
+      ORDER BY a.fecha DESC, a.id DESC
+    `, [desde||null, hasta||null]);
+    res.json(r.rows);
+  } catch (err) { res.status(500).json({ mensaje: err.message }); }
+});
+
+app.get('/api/contabilidad/asientos/:id', requireAuth, requirePermiso('contabilidad'), async (req, res) => {
+  try {
+    const a = await pool.query(
+      'SELECT a.*, u.nombre AS usuario_nombre FROM asientos_contables a LEFT JOIN usuarios u ON a.usuario_id=u.id WHERE a.id=$1',
+      [req.params.id]
+    );
+    if (!a.rows.length) return res.status(404).json({ mensaje: 'Asiento no encontrado' });
+    const lineas = await pool.query(
+      'SELECT l.*, c.codigo, c.nombre AS cuenta_nombre, c.tipo FROM lineas_asiento l JOIN cuentas_contables c ON l.cuenta_id=c.id WHERE l.asiento_id=$1 ORDER BY l.id',
+      [req.params.id]
+    );
+    res.json({ ...a.rows[0], lineas: lineas.rows });
+  } catch (err) { res.status(500).json({ mensaje: err.message }); }
+});
+
+app.post('/api/contabilidad/asientos', requireAuth, requirePermiso('contabilidad'), async (req, res) => {
+  const { fecha, descripcion, referencia, lineas } = req.body;
+  if (!descripcion?.trim()) return res.json({ exito: false, mensaje: 'La descripción es requerida' });
+  if (!Array.isArray(lineas) || lineas.length < 2)
+    return res.json({ exito: false, mensaje: 'Se requieren al menos 2 líneas' });
+  const totalDebe  = lineas.reduce((s, l) => s + (parseFloat(l.debe)  || 0), 0);
+  const totalHaber = lineas.reduce((s, l) => s + (parseFloat(l.haber) || 0), 0);
+  if (Math.abs(totalDebe - totalHaber) > 0.01)
+    return res.json({ exito: false, mensaje: `El asiento no cuadra: Débitos $${totalDebe.toFixed(2)} ≠ Créditos $${totalHaber.toFixed(2)}` });
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const fechaUso = fecha || new Date().toISOString().split('T')[0];
+    const a = await client.query(
+      'INSERT INTO asientos_contables (fecha,descripcion,referencia,usuario_id) VALUES ($1,$2,$3,$4) RETURNING id',
+      [fechaUso, descripcion.trim(), referencia||null, req.session.usuario.id]
+    );
+    const asientoId = a.rows[0].id;
+    for (const l of lineas) {
+      if (!l.cuenta_id) throw new Error('Todas las líneas deben tener una cuenta seleccionada');
+      await client.query(
+        'INSERT INTO lineas_asiento (asiento_id,cuenta_id,descripcion,debe,haber) VALUES ($1,$2,$3,$4,$5)',
+        [asientoId, l.cuenta_id, l.descripcion||null, parseFloat(l.debe)||0, parseFloat(l.haber)||0]
+      );
+    }
+    await client.query('COMMIT');
+    res.json({ exito: true, asiento_id: asientoId });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    res.json({ exito: false, mensaje: err.message });
+  } finally { client.release(); }
+});
+
+app.put('/api/contabilidad/asientos/:id/anular', requireAuth, requirePermiso('contabilidad'), async (req, res) => {
+  try {
+    const r = await pool.query("UPDATE asientos_contables SET estado='anulado' WHERE id=$1 AND estado='activo' RETURNING id", [req.params.id]);
+    if (!r.rows.length) return res.json({ exito: false, mensaje: 'Asiento no encontrado o ya anulado' });
+    res.json({ exito: true });
+  } catch (err) { res.json({ exito: false, mensaje: err.message }); }
+});
+
+app.get('/api/contabilidad/estado-resultados', requireAuth, requirePermiso('contabilidad'), async (req, res) => {
+  const { desde, hasta } = req.query;
+  try {
+    const r = await pool.query(`
+      SELECT c.codigo, c.nombre, c.tipo, c.naturaleza, c.nivel,
+             COALESCE(SUM(l.debe),0)  AS total_debe,
+             COALESCE(SUM(l.haber),0) AS total_haber
+      FROM cuentas_contables c
+      LEFT JOIN lineas_asiento l  ON l.cuenta_id  = c.id
+      LEFT JOIN asientos_contables a ON l.asiento_id = a.id
+        AND a.estado = 'activo'
+        AND ($1::date IS NULL OR a.fecha >= $1::date)
+        AND ($2::date IS NULL OR a.fecha <= $2::date)
+      WHERE c.tipo IN ('ingreso','costo','gasto') AND c.activa = TRUE
+      GROUP BY c.id, c.codigo, c.nombre, c.tipo, c.naturaleza, c.nivel
+      ORDER BY c.codigo
+    `, [desde||null, hasta||null]);
+    res.json(r.rows);
+  } catch (err) { res.status(500).json({ mensaje: err.message }); }
+});
+
+app.get('/api/contabilidad/balance-general', requireAuth, requirePermiso('contabilidad'), async (req, res) => {
+  const { hasta } = req.query;
+  try {
+    const r = await pool.query(`
+      SELECT c.codigo, c.nombre, c.tipo, c.naturaleza, c.nivel,
+             COALESCE(SUM(l.debe),0)  AS total_debe,
+             COALESCE(SUM(l.haber),0) AS total_haber
+      FROM cuentas_contables c
+      LEFT JOIN lineas_asiento l  ON l.cuenta_id  = c.id
+      LEFT JOIN asientos_contables a ON l.asiento_id = a.id
+        AND a.estado = 'activo'
+        AND ($1::date IS NULL OR a.fecha <= $1::date)
+      WHERE c.tipo IN ('activo','pasivo','patrimonio') AND c.activa = TRUE
+      GROUP BY c.id, c.codigo, c.nombre, c.tipo, c.naturaleza, c.nivel
+      ORDER BY c.codigo
+    `, [hasta||null]);
+    res.json(r.rows);
+  } catch (err) { res.status(500).json({ mensaje: err.message }); }
+});
+
+app.get('/api/contabilidad/libro-mayor', requireAuth, requirePermiso('contabilidad'), async (req, res) => {
+  const { cuenta_id, desde, hasta } = req.query;
+  if (!cuenta_id) return res.json([]);
+  try {
+    const r = await pool.query(`
+      SELECT a.fecha, a.id AS asiento_id, a.descripcion AS asiento_desc,
+             l.descripcion, l.debe, l.haber
+      FROM lineas_asiento l
+      JOIN asientos_contables a ON l.asiento_id = a.id
+      WHERE l.cuenta_id = $1 AND a.estado = 'activo'
+        AND ($2::date IS NULL OR a.fecha >= $2::date)
+        AND ($3::date IS NULL OR a.fecha <= $3::date)
+      ORDER BY a.fecha ASC, a.id ASC
+    `, [cuenta_id, desde||null, hasta||null]);
+    res.json(r.rows);
+  } catch (err) { res.status(500).json({ mensaje: err.message }); }
 });
 
 // ── Dashboard KPIs ────────────────────────────────────────────────────────────

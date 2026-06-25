@@ -5,6 +5,18 @@
   <title>Productos — MASTERISADO</title>
   <script src="/admin/layout.js"></script>
   <style id="base-css"></style>
+  <style>
+    .sel-wrap { display:flex; gap:6px; align-items:center; }
+    .sel-wrap select { flex:1; min-width:0; }
+    .btn-plus { width:30px; height:34px; border:none; border-radius:7px; background:#4A90D9; color:white; font-size:18px; line-height:1; cursor:pointer; flex-shrink:0; font-weight:700; }
+    .btn-plus:hover { background:#357abd; }
+    .mini-form { display:none; margin-top:6px; }
+    .mini-form.open { display:flex; gap:5px; align-items:center; flex-wrap:wrap; }
+    .mini-form input { flex:1; min-width:80px; padding:6px 9px; border:1.5px solid #4A90D9; border-radius:6px; font-size:12px; }
+    .mini-form input.mini-sm { flex:0 0 70px; }
+    .btn-mini-ok { padding:5px 10px; border:none; border-radius:6px; background:#27AE60; color:white; font-size:13px; cursor:pointer; font-weight:700; }
+    .btn-mini-x  { padding:5px 10px; border:none; border-radius:6px; background:#eee; color:#555; font-size:13px; cursor:pointer; font-weight:700; }
+  </style>
 </head>
 <body>
 <header>
@@ -50,9 +62,43 @@
     <div class="form-row full"><div class="campo"><label>Nombre *</label><input id="f-nombre" required/></div></div>
     <div class="form-row full"><div class="campo"><label>Descripción</label><textarea id="f-desc" rows="2"></textarea></div></div>
     <div class="form-row">
-      <div class="campo"><label>Categoría</label><select id="f-cat"><option value="">Sin categoría</option></select></div>
-      <div class="campo"><label>Marca</label><select id="f-marca"><option value="">Sin marca</option></select></div>
-      <div class="campo"><label>Unidad</label><select id="f-unidad"><option value="">Seleccionar</option></select></div>
+      <div class="campo">
+        <label>Categoría</label>
+        <div class="sel-wrap">
+          <select id="f-cat"><option value="">Sin categoría</option></select>
+          <button class="btn-plus" title="Nueva categoría" onclick="toggleCrear('cat')">+</button>
+        </div>
+        <div class="mini-form" id="mf-cat">
+          <input id="mf-cat-nombre" placeholder="Nombre de categoría"/>
+          <button class="btn-mini-ok" onclick="crearCatalogo('cat')">✓</button>
+          <button class="btn-mini-x"  onclick="cerrarCrear('cat')">✕</button>
+        </div>
+      </div>
+      <div class="campo">
+        <label>Marca</label>
+        <div class="sel-wrap">
+          <select id="f-marca"><option value="">Sin marca</option></select>
+          <button class="btn-plus" title="Nueva marca" onclick="toggleCrear('marca')">+</button>
+        </div>
+        <div class="mini-form" id="mf-marca">
+          <input id="mf-marca-nombre" placeholder="Nombre de marca"/>
+          <button class="btn-mini-ok" onclick="crearCatalogo('marca')">✓</button>
+          <button class="btn-mini-x"  onclick="cerrarCrear('marca')">✕</button>
+        </div>
+      </div>
+      <div class="campo">
+        <label>Unidad</label>
+        <div class="sel-wrap">
+          <select id="f-unidad"><option value="">Seleccionar</option></select>
+          <button class="btn-plus" title="Nueva unidad" onclick="toggleCrear('und')">+</button>
+        </div>
+        <div class="mini-form" id="mf-und">
+          <input id="mf-und-nombre" placeholder="Nombre (ej: Kilogramo)"/>
+          <input id="mf-und-simbolo" placeholder="Símbolo" class="mini-sm"/>
+          <button class="btn-mini-ok" onclick="crearCatalogo('und')">✓</button>
+          <button class="btn-mini-x"  onclick="cerrarCrear('und')">✕</button>
+        </div>
+      </div>
     </div>
     <div class="form-row">
       <div class="campo"><label>Precio compra *</label><input type="number" id="f-pcompra" min="0" step="0.01"/></div>
@@ -172,23 +218,79 @@ function abrirEditar(p) {
   document.getElementById('modal').classList.add('open');
 }
 
-function cerrarModal() { document.getElementById('modal').classList.remove('open'); }
+function cerrarModal() {
+  document.getElementById('modal').classList.remove('open');
+  ['cat','marca','und'].forEach(cerrarCrear);
+}
+
+// ── Creación inline de catálogos ────────────────────────────────────────────
+const CATALOGO = {
+  cat:   { url: '/api/categorias', campos: ['nombre'],          select: 'f-cat',   label: c => c.nombre,              prefijo: 'mf-cat' },
+  marca: { url: '/api/marcas',     campos: ['nombre'],          select: 'f-marca', label: m => m.nombre,              prefijo: 'mf-marca' },
+  und:   { url: '/api/unidades',   campos: ['nombre','simbolo'],select: 'f-unidad',label: u => `${u.nombre} (${u.simbolo})`, prefijo: 'mf-und' },
+};
+
+function toggleCrear(tipo) {
+  const mf = document.getElementById(`mf-${tipo}`);
+  const yaAbierto = mf.classList.contains('open');
+  ['cat','marca','und'].forEach(cerrarCrear);
+  if (!yaAbierto) {
+    mf.classList.add('open');
+    document.getElementById(`${CATALOGO[tipo].prefijo}-nombre`)?.focus();
+  }
+}
+
+function cerrarCrear(tipo) {
+  const mf = document.getElementById(`mf-${tipo}`);
+  if (!mf) return;
+  mf.classList.remove('open');
+  CATALOGO[tipo].campos.forEach(c => {
+    const el = document.getElementById(`${CATALOGO[tipo].prefijo}-${c}`);
+    if (el) el.value = '';
+  });
+}
+
+async function crearCatalogo(tipo) {
+  const cfg = CATALOGO[tipo];
+  const body = {};
+  for (const campo of cfg.campos) {
+    const val = document.getElementById(`${cfg.prefijo}-${campo}`)?.value.trim();
+    if (!val) { toast(`El campo "${campo}" es requerido`, 'err'); return; }
+    body[campo] = val;
+  }
+  const r = await fetch(cfg.url, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body) });
+  const data = await r.json();
+  if (data.error) { toast(data.error, 'err'); return; }
+  // Añadir al select y auto-seleccionar
+  const sel = document.getElementById(cfg.select);
+  const opt = document.createElement('option');
+  opt.value = data.id;
+  opt.textContent = cfg.label(data);
+  sel.appendChild(opt);
+  sel.value = data.id;
+  cerrarCrear(tipo);
+  toast(`${cfg.label(data)} creado/a correctamente`);
+}
 
 async function guardar() {
   const id = document.getElementById('f-id').value;
+  const sku    = document.getElementById('f-sku').value.trim();
+  const nombre = document.getElementById('f-nombre').value.trim();
+  if (!sku)    { toast('El SKU es requerido', 'err'); return; }
+  if (!nombre) { toast('El nombre del producto es requerido', 'err'); return; }
   const body = {
-    sku: document.getElementById('f-sku').value,
+    sku,
     codigo_barras: document.getElementById('f-barras').value,
-    nombre: document.getElementById('f-nombre').value,
+    nombre,
     descripcion: document.getElementById('f-desc').value,
     categoria_id: document.getElementById('f-cat').value || null,
     marca_id: document.getElementById('f-marca').value || null,
     unidad_id: document.getElementById('f-unidad').value || null,
-    precio_compra: document.getElementById('f-pcompra').value,
-    precio_venta: document.getElementById('f-pventa').value,
-    iva_porcentaje: document.getElementById('f-iva').value,
-    stock_minimo: document.getElementById('f-stmin').value,
-    punto_reorden: document.getElementById('f-reorden').value,
+    precio_compra: parseFloat(document.getElementById('f-pcompra').value) || 0,
+    precio_venta: parseFloat(document.getElementById('f-pventa').value) || 0,
+    iva_porcentaje: parseFloat(document.getElementById('f-iva').value) || 19,
+    stock_minimo: parseInt(document.getElementById('f-stmin').value) || 0,
+    punto_reorden: parseInt(document.getElementById('f-reorden').value) || 0,
     ubicacion: document.getElementById('f-ubic').value,
     imagen_url: document.getElementById('f-img').value,
     activo: id ? document.getElementById('f-activo').value === 'true' : true,

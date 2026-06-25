@@ -3,7 +3,7 @@
 const PERMISOS_LABELS = {
   productos: 'Productos', stock: 'Stock', compras: 'Compras',
   ventas: 'Ventas', reportes: 'Reportes', usuarios: 'Usuarios',
-  roles: 'Roles', asignar_admin: 'Asignar admin'
+  roles: 'Roles', contabilidad: 'Contabilidad', asignar_admin: 'Asignar admin'
 };
 
 function fmtMoneda(v) {
@@ -41,6 +41,7 @@ function navHTML(activo, permisos = {}) {
     { href: '/admin/ventas', label: '💰 Ventas', perm: 'ventas' },
     { href: '/admin/reportes', label: '📈 Reportes', perm: 'reportes' },
     { href: '/admin/usuarios', label: '👥 Usuarios', perm: 'usuarios' },
+    { href: '/admin/contabilidad', label: '📒 Contabilidad', perm: 'contabilidad' },
   ];
   return links
     .filter(l => !l.perm || permisos[l.perm])

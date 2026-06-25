@@ -10,6 +10,12 @@
     .resumen-card { background:white; border-radius:10px; padding:16px; box-shadow:0 2px 8px rgba(0,0,0,0.07); border-left:4px solid #4A90D9; }
     .resumen-label { font-size:11px; color:#888; font-weight:600; text-transform:uppercase; }
     .resumen-valor { font-size:22px; font-weight:700; color:#1a1a2e; margin-top:4px; }
+    .tabs { display:flex; gap:4px; margin-bottom:20px; border-bottom:2px solid #e8eaf0; }
+    .tab { padding:10px 18px; cursor:pointer; font-size:13px; font-weight:600; color:#888; border-bottom:3px solid transparent; margin-bottom:-2px; }
+    .tab.active { color:#4A90D9; border-bottom-color:#4A90D9; }
+    .tab-content { display:none; } .tab-content.active { display:block; }
+    .tipo-badge-natural  { background:#e8f8ee; color:#27AE60; padding:3px 10px; border-radius:20px; font-size:11px; font-weight:700; }
+    .tipo-badge-juridica { background:#e8f2ff; color:#4A90D9; padding:3px 10px; border-radius:20px; font-size:11px; font-weight:700; }
   </style>
 </head>
 <body>
@@ -23,31 +29,56 @@
 <nav id="nav-links"></nav>
 
 <main>
-  <h2 style="font-size:16px;color:#1a1a2e;margin-bottom:20px">💰 Historial de Ventas</h2>
-
-  <div class="resumen-bar" id="resumen-bar">
-    <div class="resumen-card"><div class="resumen-label">Cargando...</div></div>
+  <div class="tabs">
+    <div class="tab active" onclick="cambiarTab('ventas')">💰 Ventas</div>
+    <div class="tab" onclick="cambiarTab('clientes')">👥 Clientes</div>
   </div>
 
-  <div class="card">
-    <div class="top-bar">
-      <div class="card-title" style="margin:0">Ventas registradas</div>
-      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
-        <input type="date" id="f-desde" style="padding:7px 10px;border:1.5px solid #d0d5dd;border-radius:7px;font-size:12px"/>
-        <input type="date" id="f-hasta" style="padding:7px 10px;border:1.5px solid #d0d5dd;border-radius:7px;font-size:12px"/>
-        <select id="f-estado" style="padding:7px 10px;border:1.5px solid #d0d5dd;border-radius:7px;font-size:12px">
-          <option value="">Todos los estados</option>
-          <option value="completada">Completada</option>
-          <option value="anulada">Anulada</option>
-        </select>
-        <button class="btn btn-primary btn-sm" onclick="cargarVentas()">Filtrar</button>
+  <!-- TAB VENTAS -->
+  <div class="tab-content active" id="tab-ventas">
+    <div class="resumen-bar" id="resumen-bar">
+      <div class="resumen-card"><div class="resumen-label">Cargando...</div></div>
+    </div>
+
+    <div class="card">
+      <div class="top-bar">
+        <div class="card-title" style="margin:0">Ventas registradas</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+          <input type="date" id="f-desde" style="padding:7px 10px;border:1.5px solid #d0d5dd;border-radius:7px;font-size:12px"/>
+          <input type="date" id="f-hasta" style="padding:7px 10px;border:1.5px solid #d0d5dd;border-radius:7px;font-size:12px"/>
+          <select id="f-estado" style="padding:7px 10px;border:1.5px solid #d0d5dd;border-radius:7px;font-size:12px">
+            <option value="">Todos los estados</option>
+            <option value="completada">Completada</option>
+            <option value="anulada">Anulada</option>
+          </select>
+          <button class="btn btn-primary btn-sm" onclick="cargarVentas()">Filtrar</button>
+        </div>
+      </div>
+      <div class="tabla-wrap">
+        <table>
+          <thead><tr><th>#</th><th>Fecha</th><th>Cliente</th><th>Subtotal</th><th>IVA</th><th>Total</th><th>Estado</th><th>Cajero</th><th>Acciones</th></tr></thead>
+          <tbody id="tabla-ventas"><tr><td colspan="9" style="text-align:center;color:#aaa;padding:30px">Cargando...</td></tr></tbody>
+        </table>
       </div>
     </div>
-    <div class="tabla-wrap">
-      <table>
-        <thead><tr><th>#</th><th>Fecha</th><th>Cliente</th><th>Subtotal</th><th>IVA</th><th>Total</th><th>Estado</th><th>Cajero</th><th>Acciones</th></tr></thead>
-        <tbody id="tabla-ventas"><tr><td colspan="9" style="text-align:center;color:#aaa;padding:30px">Cargando...</td></tr></tbody>
-      </table>
+  </div>
+
+  <!-- TAB CLIENTES -->
+  <div class="tab-content" id="tab-clientes">
+    <div class="card">
+      <div class="top-bar">
+        <div class="card-title" style="margin:0">Lista de clientes</div>
+        <div style="display:flex;gap:8px;align-items:center">
+          <input class="search" id="bus-clientes" placeholder="Buscar por nombre o identificación..." oninput="filtrarClientes()"/>
+          <button class="btn btn-success btn-sm" onclick="abrirNuevoCliente()">+ Nuevo cliente</button>
+        </div>
+      </div>
+      <div class="tabla-wrap">
+        <table>
+          <thead><tr><th>Nombre / Razón social</th><th>Tipo</th><th>Identificación</th><th>Teléfono</th><th>Dirección</th><th>Acciones</th></tr></thead>
+          <tbody id="tabla-clientes"><tr><td colspan="6" style="text-align:center;color:#aaa;padding:30px">Cargando...</td></tr></tbody>
+        </table>
+      </div>
     </div>
   </div>
 </main>
@@ -65,14 +96,70 @@
       <div style="font-size:15px;margin-top:4px">Total: <strong id="v-total"></strong></div>
     </div>
     <div class="modal-footer" id="v-footer">
-      <button class="btn" style="background:#eee;color:#555" onclick="cerrarModal()">Cerrar</button>
+      <button class="btn" style="background:#eee;color:#555" onclick="cerrarModalVenta()">Cerrar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal nuevo/editar cliente -->
+<div class="modal-overlay" id="modal-cliente">
+  <div class="modal" style="max-width:500px">
+    <div class="modal-title" id="cli-titulo">Nuevo cliente</div>
+    <input type="hidden" id="cli-id"/>
+    <div class="form-row full">
+      <div class="campo">
+        <label>Nombre completo / Razón social *</label>
+        <input type="text" id="cli-nombre" maxlength="150" placeholder="Ej: Juan Pérez / Empresa S.A.S."/>
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="campo">
+        <label>Tipo de persona *</label>
+        <select id="cli-tipo">
+          <option value="">Seleccionar...</option>
+          <option value="natural">Natural</option>
+          <option value="juridica">Jurídica</option>
+        </select>
+      </div>
+      <div class="campo">
+        <label>Número de identificación *</label>
+        <input type="text" id="cli-documento" maxlength="30" placeholder="CC, NIT, RUT..."/>
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="campo">
+        <label>Teléfono</label>
+        <input type="text" id="cli-telefono" maxlength="20" placeholder="Ej: 310 000 0000"/>
+      </div>
+      <div class="campo">
+        <label>Email</label>
+        <input type="email" id="cli-email" maxlength="100" placeholder="correo@ejemplo.com"/>
+      </div>
+    </div>
+    <div class="form-row full">
+      <div class="campo">
+        <label>Dirección</label>
+        <input type="text" id="cli-direccion" maxlength="255" placeholder="Calle, número, ciudad..."/>
+      </div>
+    </div>
+    <div id="cli-msg" style="font-size:13px;margin-bottom:10px;display:none"></div>
+    <div class="modal-footer">
+      <button class="btn" style="background:#eee;color:#555" onclick="cerrarModalCliente()">Cancelar</button>
+      <button class="btn btn-success" onclick="guardarCliente()">Guardar</button>
     </div>
   </div>
 </div>
 
 <script>
 document.getElementById('base-css').textContent = CSS_BASE;
-let ventaActual = null;
+let ventaActual = null, clientes = [], clientesFiltrados = [];
+
+function cambiarTab(id) {
+  document.querySelectorAll('.tab,.tab-content').forEach(el => el.classList.remove('active'));
+  document.querySelector(`.tab[onclick="cambiarTab('${id}')"]`).classList.add('active');
+  document.getElementById(`tab-${id}`).classList.add('active');
+  if (id === 'clientes') cargarClientes();
+}
 
 async function init() {
   const sesion = await cargarSesion();
@@ -80,6 +167,8 @@ async function init() {
   renderNav('/admin/ventas', sesion);
   cargarVentas();
 }
+
+// ── Ventas ────────────────────────────────────────────────────────────────────
 
 async function cargarVentas() {
   const desde = document.getElementById('f-desde').value;
@@ -92,7 +181,6 @@ async function cargarVentas() {
 
   const ventas = await fetch(url).then(r=>r.json());
 
-  // Resumen
   const activas = ventas.filter(v=>v.estado==='completada');
   const totalVentas = activas.reduce((s,v)=>s+parseFloat(v.total||0),0);
   const totalIVA = activas.reduce((s,v)=>s+parseFloat(v.iva_total||0),0);
@@ -146,19 +234,122 @@ async function verVenta(id) {
   document.getElementById('v-iva').textContent = fmtMoneda(v.iva_total);
   document.getElementById('v-total').textContent = fmtMoneda(v.total);
   const footer = document.getElementById('v-footer');
-  footer.innerHTML = `<button class="btn" style="background:#eee;color:#555" onclick="cerrarModal()">Cerrar</button>`;
+  footer.innerHTML = `<button class="btn" style="background:#eee;color:#555" onclick="cerrarModalVenta()">Cerrar</button>`;
   if (v.estado === 'completada') footer.innerHTML += ` <button class="btn btn-danger" onclick="anularVenta(${v.id})">Anular venta</button>`;
   document.getElementById('modal-venta').classList.add('open');
 }
 
-function cerrarModal() { document.getElementById('modal-venta').classList.remove('open'); }
+function cerrarModalVenta() { document.getElementById('modal-venta').classList.remove('open'); }
 
 async function anularVenta(id) {
   if (!confirmar('¿Anular esta venta? El stock será restaurado automáticamente.')) return;
   const r = await fetch(`/api/ventas/${id}/anular`, { method:'PUT' });
   const data = await r.json();
-  if (data.exito) { cerrarModal(); toast('Venta anulada y stock restaurado'); cargarVentas(); }
+  if (data.exito) { cerrarModalVenta(); toast('Venta anulada y stock restaurado'); cargarVentas(); }
   else toast(data.mensaje||'Error','err');
+}
+
+// ── Clientes ──────────────────────────────────────────────────────────────────
+
+async function cargarClientes() {
+  const data = await fetch('/api/clientes').then(r=>r.json());
+  clientes = data;
+  clientesFiltrados = data;
+  renderTablaClientes(clientes);
+}
+
+function renderTablaClientes(lista) {
+  const tbody = document.getElementById('tabla-clientes');
+  if (!lista.length) {
+    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#aaa;padding:30px">Sin clientes registrados</td></tr>';
+    return;
+  }
+  tbody.innerHTML = lista.map(c => {
+    const tipoBadge = c.tipo_persona === 'natural'
+      ? '<span class="tipo-badge-natural">Natural</span>'
+      : c.tipo_persona === 'juridica'
+        ? '<span class="tipo-badge-juridica">Jurídica</span>'
+        : '<span style="color:#aaa;font-size:12px">—</span>';
+    return `<tr>
+      <td><strong>${c.nombre}</strong></td>
+      <td>${tipoBadge}</td>
+      <td><code style="font-size:12px;color:#555">${c.documento||'—'}</code></td>
+      <td style="font-size:12px;color:#555">${c.telefono||'—'}</td>
+      <td style="font-size:12px;color:#555;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${c.direccion||'—'}</td>
+      <td>
+        <button class="btn btn-warning btn-sm" onclick='abrirEditarCliente(${JSON.stringify(c)})'>Editar</button>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+function filtrarClientes() {
+  const q = document.getElementById('bus-clientes').value.toLowerCase();
+  renderTablaClientes(clientes.filter(c =>
+    c.nombre.toLowerCase().includes(q) || (c.documento||'').toLowerCase().includes(q)
+  ));
+}
+
+function abrirNuevoCliente() {
+  document.getElementById('cli-titulo').textContent = 'Nuevo cliente';
+  document.getElementById('cli-id').value = '';
+  document.getElementById('cli-nombre').value = '';
+  document.getElementById('cli-tipo').value = '';
+  document.getElementById('cli-documento').value = '';
+  document.getElementById('cli-telefono').value = '';
+  document.getElementById('cli-email').value = '';
+  document.getElementById('cli-direccion').value = '';
+  document.getElementById('cli-msg').style.display = 'none';
+  document.getElementById('modal-cliente').classList.add('open');
+}
+
+function abrirEditarCliente(c) {
+  document.getElementById('cli-titulo').textContent = 'Editar cliente';
+  document.getElementById('cli-id').value = c.id;
+  document.getElementById('cli-nombre').value = c.nombre;
+  document.getElementById('cli-tipo').value = c.tipo_persona || '';
+  document.getElementById('cli-documento').value = c.documento || '';
+  document.getElementById('cli-telefono').value = c.telefono || '';
+  document.getElementById('cli-email').value = c.email || '';
+  document.getElementById('cli-direccion').value = c.direccion || '';
+  document.getElementById('cli-msg').style.display = 'none';
+  document.getElementById('modal-cliente').classList.add('open');
+}
+
+function cerrarModalCliente() { document.getElementById('modal-cliente').classList.remove('open'); }
+
+async function guardarCliente() {
+  const id          = document.getElementById('cli-id').value;
+  const nombre      = document.getElementById('cli-nombre').value.trim();
+  const tipo_persona = document.getElementById('cli-tipo').value;
+  const documento   = document.getElementById('cli-documento').value.trim();
+  const telefono    = document.getElementById('cli-telefono').value.trim();
+  const email       = document.getElementById('cli-email').value.trim();
+  const direccion   = document.getElementById('cli-direccion').value.trim();
+  const msg = document.getElementById('cli-msg');
+  msg.style.display = 'none';
+
+  if (!nombre)       { msg.textContent = 'El nombre es requerido';                    msg.style.color='#e74c3c'; msg.style.display='block'; return; }
+  if (!tipo_persona) { msg.textContent = 'El tipo de persona es requerido';           msg.style.color='#e74c3c'; msg.style.display='block'; return; }
+  if (!documento)    { msg.textContent = 'El número de identificación es requerido';  msg.style.color='#e74c3c'; msg.style.display='block'; return; }
+
+  const url    = id ? `/api/clientes/${id}` : '/api/clientes';
+  const method = id ? 'PUT' : 'POST';
+  const r = await fetch(url, {
+    method,
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ nombre, tipo_persona, documento, telefono: telefono||null, email: email||null, direccion: direccion||null }),
+  });
+  const data = await r.json();
+  if (data.exito) {
+    cerrarModalCliente();
+    toast(id ? 'Cliente actualizado' : 'Cliente creado correctamente');
+    cargarClientes();
+  } else {
+    msg.textContent = data.mensaje || 'Error al guardar';
+    msg.style.color = '#e74c3c';
+    msg.style.display = 'block';
+  }
 }
 
 init();

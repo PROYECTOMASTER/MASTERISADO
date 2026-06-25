@@ -191,6 +191,90 @@ async function inicializarDB() {
       ON CONFLICT DO NOTHING;
     `);
 
+    // Migración: campos de clientes
+    await client.query(`ALTER TABLE clientes ADD COLUMN IF NOT EXISTS tipo_persona VARCHAR(20)`);
+    await client.query(`ALTER TABLE clientes ADD COLUMN IF NOT EXISTS direccion TEXT`);
+
+    // ── Módulo de contabilidad ────────────────────────────────────────────────
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS cuentas_contables (
+        id         SERIAL PRIMARY KEY,
+        codigo     VARCHAR(20) UNIQUE NOT NULL,
+        nombre     VARCHAR(150) NOT NULL,
+        tipo       VARCHAR(20)  NOT NULL,  -- activo | pasivo | patrimonio | ingreso | costo | gasto
+        naturaleza VARCHAR(10)  NOT NULL,  -- deudora | acreedora
+        nivel      INTEGER DEFAULT 3,
+        activa     BOOLEAN DEFAULT TRUE
+      );
+      CREATE TABLE IF NOT EXISTS asientos_contables (
+        id          SERIAL PRIMARY KEY,
+        fecha       DATE NOT NULL DEFAULT CURRENT_DATE,
+        descripcion TEXT NOT NULL,
+        referencia  VARCHAR(100),
+        tipo        VARCHAR(30) DEFAULT 'manual',
+        estado      VARCHAR(20) DEFAULT 'activo',
+        usuario_id  INTEGER REFERENCES usuarios(id),
+        creado_en   TIMESTAMP DEFAULT NOW()
+      );
+      CREATE TABLE IF NOT EXISTS lineas_asiento (
+        id          SERIAL PRIMARY KEY,
+        asiento_id  INTEGER NOT NULL REFERENCES asientos_contables(id) ON DELETE CASCADE,
+        cuenta_id   INTEGER NOT NULL REFERENCES cuentas_contables(id),
+        descripcion VARCHAR(255),
+        debe        NUMERIC(15,2) DEFAULT 0,
+        haber       NUMERIC(15,2) DEFAULT 0
+      );
+    `);
+
+    // Sembrar plan de cuentas (PUC colombiano simplificado)
+    await client.query(`
+      INSERT INTO cuentas_contables (codigo,nombre,tipo,naturaleza,nivel) VALUES
+      ('1',    'ACTIVO',                        'activo',     'deudora',   1),
+      ('11',   'Disponible',                    'activo',     'deudora',   2),
+      ('1105', 'Caja general',                  'activo',     'deudora',   3),
+      ('1110', 'Bancos',                        'activo',     'deudora',   3),
+      ('13',   'Deudores comerciales',          'activo',     'deudora',   2),
+      ('1305', 'Clientes',                      'activo',     'deudora',   3),
+      ('14',   'Inventarios',                   'activo',     'deudora',   2),
+      ('1435', 'Mercancías',                    'activo',     'deudora',   3),
+      ('2',    'PASIVO',                        'pasivo',     'acreedora', 1),
+      ('22',   'Proveedores',                   'pasivo',     'acreedora', 2),
+      ('2205', 'Proveedores nacionales',        'pasivo',     'acreedora', 3),
+      ('24',   'Impuestos por pagar',           'pasivo',     'acreedora', 2),
+      ('2408', 'IVA por pagar',                 'pasivo',     'acreedora', 3),
+      ('3',    'PATRIMONIO',                    'patrimonio', 'acreedora', 1),
+      ('31',   'Capital social',                'patrimonio', 'acreedora', 2),
+      ('3105', 'Capital suscrito y pagado',     'patrimonio', 'acreedora', 3),
+      ('36',   'Resultados del ejercicio',      'patrimonio', 'acreedora', 2),
+      ('3605', 'Utilidad del ejercicio',        'patrimonio', 'acreedora', 3),
+      ('4',    'INGRESOS',                      'ingreso',    'acreedora', 1),
+      ('41',   'Ingresos operacionales',        'ingreso',    'acreedora', 2),
+      ('4135', 'Ventas',                        'ingreso',    'acreedora', 3),
+      ('42',   'Ingresos no operacionales',     'ingreso',    'acreedora', 2),
+      ('4210', 'Otros ingresos',                'ingreso',    'acreedora', 3),
+      ('6',    'COSTO DE VENTAS',               'costo',      'deudora',   1),
+      ('61',   'Costo de ventas',               'costo',      'deudora',   2),
+      ('6135', 'Costo de mercancías',           'costo',      'deudora',   3),
+      ('5',    'GASTOS OPERACIONALES',          'gasto',      'deudora',   1),
+      ('51',   'Gastos de personal',            'gasto',      'deudora',   2),
+      ('5105', 'Salarios y prestaciones',       'gasto',      'deudora',   3),
+      ('52',   'Gastos generales',              'gasto',      'deudora',   2),
+      ('5205', 'Arrendamientos',                'gasto',      'deudora',   3),
+      ('5210', 'Servicios públicos',            'gasto',      'deudora',   3),
+      ('5215', 'Papelería y útiles',            'gasto',      'deudora',   3),
+      ('5220', 'Depreciaciones',                'gasto',      'deudora',   3),
+      ('5225', 'Otros gastos generales',        'gasto',      'deudora',   3)
+      ON CONFLICT (codigo) DO NOTHING;
+    `);
+
+    // Agregar permiso contabilidad a superusuario y administrador si no existe
+    await client.query(`
+      UPDATE roles
+      SET permisos = permisos || '{"contabilidad":true}'::jsonb
+      WHERE nombre IN ('superusuario','administrador')
+        AND (permisos->>'contabilidad') IS NULL;
+    `);
+
     // Migración: columna usuario como nuevo identificador de login
     await client.query(`ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS usuario VARCHAR(8)`);
     await client.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_usuarios_usuario ON usuarios(usuario) WHERE usuario IS NOT NULL`);

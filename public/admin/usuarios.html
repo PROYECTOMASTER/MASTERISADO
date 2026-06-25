@@ -40,7 +40,10 @@
     <div class="card">
       <div class="top-bar">
         <div class="card-title" style="margin:0">Lista de usuarios</div>
-        <input class="search" id="bus-usuarios" placeholder="Buscar..." oninput="filtrarUsuarios()"/>
+        <div style="display:flex;gap:8px;align-items:center">
+          <input class="search" id="bus-usuarios" placeholder="Buscar..." oninput="filtrarUsuarios()"/>
+          <button class="btn btn-success btn-sm" onclick="abrirNuevoUsuario()">+ Nuevo usuario</button>
+        </div>
       </div>
       <div class="tabla-wrap">
         <table>
@@ -77,6 +80,35 @@
     </div>
   </div>
 </main>
+
+<!-- Modal nuevo usuario -->
+<div class="modal-overlay" id="modal-nuevo-usuario">
+  <div class="modal" style="max-width:420px">
+    <div class="modal-title">➕ Crear nuevo usuario</div>
+    <div class="campo" style="margin-bottom:12px">
+      <label>Nombre completo *</label>
+      <input type="text" id="nu-nombre" maxlength="100" placeholder="Ej: Juan Pérez"/>
+    </div>
+    <div class="campo" style="margin-bottom:12px">
+      <label>Usuario (login) *</label>
+      <input type="text" id="nu-usuario" maxlength="8" placeholder="Máx. 8 caracteres, sin espacios"/>
+      <div style="font-size:11px;color:#aaa;margin-top:4px">Solo letras y números, máximo 8 caracteres</div>
+    </div>
+    <div class="campo" style="margin-bottom:12px">
+      <label>Contraseña *</label>
+      <input type="password" id="nu-password" maxlength="8" placeholder="Máx. 8 caracteres"/>
+    </div>
+    <div class="campo" style="margin-bottom:20px">
+      <label>Rol *</label>
+      <select id="nu-rol"></select>
+    </div>
+    <div id="nu-msg" style="font-size:13px;margin-bottom:10px;display:none"></div>
+    <div class="modal-footer">
+      <button class="btn" style="background:#eee;color:#555" onclick="cerrarNuevoUsuario()">Cancelar</button>
+      <button class="btn btn-success" onclick="crearUsuario()">Crear usuario</button>
+    </div>
+  </div>
+</div>
 
 <!-- Modal resetear clave -->
 <div class="modal-overlay" id="modal-reset-clave">
@@ -131,6 +163,7 @@ const PERMISOS_DISPONIBLES = [
   { key:'reportes', label:'📈 Reportes' },
   { key:'usuarios', label:'👥 Usuarios' },
   { key:'roles', label:'🔑 Roles' },
+  { key:'contabilidad', label:'📒 Contabilidad' },
   { key:'asignar_admin', label:'⭐ Asignar admin', especial:true },
 ];
 
@@ -303,6 +336,50 @@ async function guardarRol() {
   const data = await r.json();
   if (data.exito !== false) { cerrarPanelRol(); toast('Rol guardado'); cargarRoles(); cargarUsuarios(); }
   else toast(data.mensaje||'Error','err');
+}
+
+function abrirNuevoUsuario() {
+  document.getElementById('nu-nombre').value = '';
+  document.getElementById('nu-usuario').value = '';
+  document.getElementById('nu-password').value = '';
+  document.getElementById('nu-msg').style.display = 'none';
+  const puedeAsignarAdmin = sesionActual?.permisos?.asignar_admin;
+  const sel = document.getElementById('nu-rol');
+  sel.innerHTML = roles
+    .filter(r => {
+      if (r.nombre === 'superusuario') return false;
+      if (r.nombre === 'administrador' && !puedeAsignarAdmin) return false;
+      return true;
+    })
+    .map(r => `<option value="${r.id}">${r.nombre}</option>`)
+    .join('');
+  document.getElementById('modal-nuevo-usuario').classList.add('open');
+}
+
+function cerrarNuevoUsuario() {
+  document.getElementById('modal-nuevo-usuario').classList.remove('open');
+}
+
+async function crearUsuario() {
+  const nombre   = document.getElementById('nu-nombre').value.trim();
+  const usuario  = document.getElementById('nu-usuario').value.trim();
+  const password = document.getElementById('nu-password').value;
+  const rol_id   = document.getElementById('nu-rol').value;
+  const msg = document.getElementById('nu-msg');
+  msg.style.display = 'none';
+
+  if (!nombre) { msg.textContent = 'El nombre es requerido'; msg.style.color='#e74c3c'; msg.style.display='block'; return; }
+  if (!/^[a-zA-Z0-9]{1,8}$/.test(usuario)) { msg.textContent = 'Usuario: solo letras y números, máximo 8 caracteres'; msg.style.color='#e74c3c'; msg.style.display='block'; return; }
+  if (!password) { msg.textContent = 'La contraseña es requerida'; msg.style.color='#e74c3c'; msg.style.display='block'; return; }
+
+  const r = await fetch('/api/usuarios', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ nombre, usuario, password, rol_id }),
+  });
+  const data = await r.json();
+  if (data.exito) { cerrarNuevoUsuario(); toast('Usuario creado correctamente'); cargarUsuarios(); }
+  else { msg.textContent = data.mensaje || 'Error al crear usuario'; msg.style.color='#e74c3c'; msg.style.display='block'; }
 }
 
 init();
