@@ -331,7 +331,7 @@ app.post('/api/productos', requireAuth, requirePermiso('productos'), async (req,
        parseFloat(precio_compra)||0,parseFloat(precio_venta)||0,parseFloat(iva_porcentaje)||19,
        parseInt(stock_minimo)||0,parseInt(punto_reorden)||0,ubicacion||'',imagen_url||'']);
     res.json({ exito: true, producto: r.rows[0] });
-  } catch (err) { console.error('ERROR PRODUCTO:', err.message); res.json({ exito: false, mensaje: err.message }); }
+  } catch (err) { console.error('ERROR PRODUCTO:', err.message); res.json({ exito: false, mensaje: errMsg(err) }); }
 });
 
 app.put('/api/productos/:id', requireAuth, requirePermiso('productos'), async (req, res) => {

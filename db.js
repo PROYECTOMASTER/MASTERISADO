@@ -206,6 +206,8 @@ async function inicializarDB() {
     await client.query(`ALTER TABLE clientes ADD COLUMN IF NOT EXISTS direccion TEXT`);
 
     // Migración: columnas nuevas de productos
+    await client.query(`ALTER TABLE productos ALTER COLUMN precio DROP NOT NULL`).catch(()=>{});
+    await client.query(`ALTER TABLE productos ALTER COLUMN precio SET DEFAULT 0`).catch(()=>{});
     await client.query(`ALTER TABLE productos ADD COLUMN IF NOT EXISTS sku VARCHAR(50)`);
     await client.query(`ALTER TABLE productos ADD COLUMN IF NOT EXISTS codigo_barras VARCHAR(50)`);
     await client.query(`ALTER TABLE productos ADD COLUMN IF NOT EXISTS marca_id INTEGER REFERENCES marcas(id) ON DELETE SET NULL`);
