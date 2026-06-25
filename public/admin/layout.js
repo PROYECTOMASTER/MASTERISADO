@@ -7,7 +7,7 @@ const PERMISOS_LABELS = {
 };
 
 function fmtMoneda(v) {
-  return '$' + parseFloat(v || 0).toLocaleString('es-CO', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+  return '$' + parseFloat(v || 0).toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
 function fmtFecha(f) {
