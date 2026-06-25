@@ -195,6 +195,15 @@ async function inicializarDB() {
     await client.query(`ALTER TABLE clientes ADD COLUMN IF NOT EXISTS tipo_persona VARCHAR(20)`);
     await client.query(`ALTER TABLE clientes ADD COLUMN IF NOT EXISTS direccion TEXT`);
 
+    // Migración: columnas nuevas de productos
+    await client.query(`ALTER TABLE productos ADD COLUMN IF NOT EXISTS sku VARCHAR(50)`);
+    await client.query(`ALTER TABLE productos ADD COLUMN IF NOT EXISTS codigo_barras VARCHAR(50)`);
+    await client.query(`ALTER TABLE productos ADD COLUMN IF NOT EXISTS marca_id INTEGER REFERENCES marcas(id) ON DELETE SET NULL`);
+    await client.query(`ALTER TABLE productos ADD COLUMN IF NOT EXISTS unidad_id INTEGER REFERENCES unidades_medida(id) ON DELETE SET NULL`);
+    await client.query(`ALTER TABLE productos ADD COLUMN IF NOT EXISTS punto_reorden INTEGER NOT NULL DEFAULT 0`);
+    await client.query(`ALTER TABLE productos ADD COLUMN IF NOT EXISTS ubicacion VARCHAR(100)`);
+    await client.query(`ALTER TABLE productos ADD COLUMN IF NOT EXISTS imagen_url VARCHAR(300)`);
+
     // ── Módulo de contabilidad ────────────────────────────────────────────────
     await client.query(`
       CREATE TABLE IF NOT EXISTS cuentas_contables (

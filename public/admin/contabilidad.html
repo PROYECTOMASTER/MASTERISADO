@@ -431,7 +431,9 @@ async function guardarCuenta() {
 let lineaIdx = 0;
 
 function cuentasOpts() {
-  return cuentas.map(c => `<option value="${c.id}">${c.codigo} — ${c.nombre}</option>`).join('');
+  return cuentas
+    .filter(c => c.codigo.length === 6 || c.codigo.length === 8)
+    .map(c => `<option value="${c.id}">${c.codigo} — ${c.nombre}</option>`).join('');
 }
 
 function agregarLinea() {
