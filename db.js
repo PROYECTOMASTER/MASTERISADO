@@ -200,6 +200,10 @@ async function inicializarDB() {
     await client.query(`ALTER TABLE productos ADD COLUMN IF NOT EXISTS codigo_barras VARCHAR(50)`);
     await client.query(`ALTER TABLE productos ADD COLUMN IF NOT EXISTS marca_id INTEGER REFERENCES marcas(id) ON DELETE SET NULL`);
     await client.query(`ALTER TABLE productos ADD COLUMN IF NOT EXISTS unidad_id INTEGER REFERENCES unidades_medida(id) ON DELETE SET NULL`);
+    await client.query(`ALTER TABLE productos ADD COLUMN IF NOT EXISTS precio_compra NUMERIC(12,2) NOT NULL DEFAULT 0`);
+    await client.query(`ALTER TABLE productos ADD COLUMN IF NOT EXISTS precio_venta NUMERIC(12,2) NOT NULL DEFAULT 0`);
+    await client.query(`ALTER TABLE productos ADD COLUMN IF NOT EXISTS iva_porcentaje NUMERIC(5,2) NOT NULL DEFAULT 19`);
+    await client.query(`ALTER TABLE productos ADD COLUMN IF NOT EXISTS stock_minimo INTEGER NOT NULL DEFAULT 0`);
     await client.query(`ALTER TABLE productos ADD COLUMN IF NOT EXISTS punto_reorden INTEGER NOT NULL DEFAULT 0`);
     await client.query(`ALTER TABLE productos ADD COLUMN IF NOT EXISTS ubicacion VARCHAR(100)`);
     await client.query(`ALTER TABLE productos ADD COLUMN IF NOT EXISTS imagen_url VARCHAR(300)`);

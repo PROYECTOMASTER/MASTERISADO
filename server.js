@@ -25,6 +25,16 @@ const requireAuth = (req, res, next) => {
   next();
 };
 
+function errMsg(err) {
+  const m = err.message || '';
+  if (m.includes('unique') || m.includes('duplicate') || m.includes('ya existe')) return 'Ya existe un registro con ese valor';
+  if (m.includes('not null') || m.includes('nulo'))    return 'Hay campos obligatorios sin completar';
+  if (m.includes('foreign key') || m.includes('llave foránea')) return 'No se puede eliminar porque está en uso';
+  if (m.includes('does not exist'))  return 'Error de configuración en la base de datos. Reinicia el servidor.';
+  if (m.includes('connection'))      return 'Sin conexión a la base de datos';
+  return 'Error interno del servidor';
+}
+
 const requirePermiso = (permiso) => async (req, res, next) => {
   if (!req.session.usuario) return res.status(401).json({ mensaje: 'No autenticado' });
   const { permisos } = req.session.usuario;
@@ -206,22 +216,25 @@ app.get('/caja',               requireAuth, (req, res) => res.sendFile(path.join
 
 app.get('/api/categorias',     async (_, res) => { const r = await pool.query('SELECT * FROM categorias ORDER BY nombre'); res.json(r.rows); });
 app.post('/api/categorias',    requireAuth, requirePermiso('productos'), async (req, res) => {
-  try { const r = await pool.query('INSERT INTO categorias (nombre) VALUES ($1) RETURNING *', [req.body.nombre]); res.json(r.rows[0]); }
-  catch (err) { res.json({ error: err.message }); }
+  if (!req.body.nombre?.trim()) return res.json({ exito: false, mensaje: 'El nombre es requerido' });
+  try { const r = await pool.query('INSERT INTO categorias (nombre) VALUES ($1) RETURNING *', [req.body.nombre.trim()]); res.json(r.rows[0]); }
+  catch (err) { res.json({ exito: false, mensaje: errMsg(err) }); }
 });
 
 app.get('/api/marcas',         async (_, res) => { const r = await pool.query('SELECT * FROM marcas ORDER BY nombre'); res.json(r.rows); });
 app.post('/api/marcas',        requireAuth, requirePermiso('productos'), async (req, res) => {
-  try { const r = await pool.query('INSERT INTO marcas (nombre) VALUES ($1) RETURNING *', [req.body.nombre]); res.json(r.rows[0]); }
-  catch (err) { res.json({ error: err.message }); }
+  if (!req.body.nombre?.trim()) return res.json({ exito: false, mensaje: 'El nombre es requerido' });
+  try { const r = await pool.query('INSERT INTO marcas (nombre) VALUES ($1) RETURNING *', [req.body.nombre.trim()]); res.json(r.rows[0]); }
+  catch (err) { res.json({ exito: false, mensaje: errMsg(err) }); }
 });
 
 app.get('/api/unidades',       async (_, res) => { const r = await pool.query('SELECT * FROM unidades_medida ORDER BY nombre'); res.json(r.rows); });
 app.post('/api/unidades',      requireAuth, requirePermiso('productos'), async (req, res) => {
   const { nombre, simbolo } = req.body;
-  if (!nombre || !simbolo) return res.json({ error: 'Nombre y símbolo requeridos' });
-  try { const r = await pool.query('INSERT INTO unidades_medida (nombre, simbolo) VALUES ($1,$2) RETURNING *', [nombre, simbolo]); res.json(r.rows[0]); }
-  catch (err) { res.json({ error: err.message }); }
+  if (!nombre?.trim()) return res.json({ exito: false, mensaje: 'El nombre es requerido' });
+  if (!simbolo?.trim()) return res.json({ exito: false, mensaje: 'El símbolo es requerido' });
+  try { const r = await pool.query('INSERT INTO unidades_medida (nombre, simbolo) VALUES ($1,$2) RETURNING *', [nombre.trim(), simbolo.trim()]); res.json(r.rows[0]); }
+  catch (err) { res.json({ exito: false, mensaje: errMsg(err) }); }
 });
 app.get('/api/proveedores',    requireAuth, requirePermiso('compras'), async (_, res) => { const r = await pool.query("SELECT * FROM proveedores ORDER BY nombre"); res.json(r.rows); });
 app.post('/api/proveedores',   requireAuth, requirePermiso('compras'), async (req, res) => {
@@ -292,7 +305,7 @@ app.post('/api/productos', requireAuth, requirePermiso('productos'), async (req,
        parseFloat(precio_compra)||0,parseFloat(precio_venta)||0,parseFloat(iva_porcentaje)||19,
        parseInt(stock_minimo)||0,parseInt(punto_reorden)||0,ubicacion||'',imagen_url||'']);
     res.json({ exito: true, producto: r.rows[0] });
-  } catch (err) { res.json({ exito: false, mensaje: err.message }); }
+  } catch (err) { res.json({ exito: false, mensaje: errMsg(err) }); }
 });
 
 app.put('/api/productos/:id', requireAuth, requirePermiso('productos'), async (req, res) => {
@@ -307,7 +320,7 @@ app.put('/api/productos/:id', requireAuth, requirePermiso('productos'), async (r
        precio_compra,precio_venta,iva_porcentaje,stock_minimo,punto_reorden,ubicacion||'',imagen_url||'',
        activo !== false, req.params.id]);
     res.json({ exito: true });
-  } catch (err) { res.json({ exito: false, mensaje: err.message }); }
+  } catch (err) { res.json({ exito: false, mensaje: errMsg(err) }); }
 });
 
 // ── API: Stock y kardex ───────────────────────────────────────────────────────

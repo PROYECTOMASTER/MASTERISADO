@@ -260,7 +260,7 @@ async function crearCatalogo(tipo) {
   }
   const r = await fetch(cfg.url, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body) });
   const data = await r.json();
-  if (data.error) { toast(data.error, 'err'); return; }
+  if (data.exito === false || data.error) { toast(data.mensaje || data.error || 'Error al guardar', 'err'); return; }
   // Añadir al select y auto-seleccionar
   const sel = document.getElementById(cfg.select);
   const opt = document.createElement('option');
